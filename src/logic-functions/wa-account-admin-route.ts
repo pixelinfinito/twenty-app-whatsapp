@@ -22,6 +22,7 @@ import { config, parseCountryCallingCode } from '../server/config';
 import { describeError, logger } from '../server/logger';
 import { provisionNotificationWorkflow } from '../server/notification-workflow';
 import { budgetForAccount, tierFor } from '../server/tier-ledger';
+import { probeWebhookRoute } from '../server/webhook-route-probe';
 import { currentWorkspaceId } from '../server/workspace';
 import { consentWordingDrift } from './wa-consent-keyword';
 import { syncAccount } from './wa-template-sync';
@@ -375,6 +376,26 @@ const diagnostics = async () => {
       ok: failedOutbound.length === 0,
       detail: { count: failedOutbound.length },
     },
+    /**
+     * The one row that would have turned issue #1's install into a five-minute
+     * fix. Everything else can be green — app installed, functions registered,
+     * token valid — while the `POST` half of the webhook does not exist,
+     * because an unclaimed registration leaves a server route with no workspace
+     * to run in. Meta reports a delivery failure with no detail, and nothing on
+     * this page disagreed with it.
+     */
+    await (async () => {
+      const probe =
+        base === ''
+          ? { ok: false, state: 'unreachable' as const, status: null, signed: false }
+          : await probeWebhookRoute({ baseUrl: base });
+
+      return {
+        key: 'webhookRoute',
+        ok: probe.ok,
+        detail: { state: probe.state, status: probe.status, signed: probe.signed },
+      };
+    })(),
     /**
      * Workspace-wide, not per-account: the wording and the keyword lists are
      * application variables, so the drift is the same for every number. It

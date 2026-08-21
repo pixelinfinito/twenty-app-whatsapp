@@ -7,7 +7,27 @@ the amendment text is what should be folded back into TRD v1.2.
 
 ## D-1 — The Meta callback URL is platform-assigned, not author-chosen
 
-**Status: SPECIFIED (with a PROBE on the GET handshake)** · Δ TRD §5.1, AR-6, §12.1, §12.2
+**Status: SPECIFIED · PROBE P-1 ANSWERED (2026-08-21, Twenty 2.31.1, crm.pixel.ao)**
+· Δ TRD §5.1, AR-6, §12.1, §12.2
+
+**P-1 result — split verdict, and both halves matter.**
+
+*Question 1 — does the server-route endpoint accept `GET`?* **No.** With the app installed and
+the registration claimed, `GET /webhooks/server/{resolver}` returns the front-end shell, while
+`POST` to the same URL reaches the resolver. Confirmed independently on 2.31.6 (issue #1) and
+2.31.1. So the **P-1 fail** branch below is the live one: the reverse-proxy alias is required,
+not optional, and `wa-webhook-resolver`'s `GET` branch stays as the thing that makes a future
+platform version need no change here.
+
+*Question 2 — is a `Response` body returned verbatim or JSON-encoded?* **Verbatim.** The verify
+route answers a wrong token with a bare `Forbidden` and `text/plain`, with no `{"statusCode":…}`
+envelope around it — and Meta's verification of the real token then passed end to end. The
+envelope seen while debugging (`{"statusCode":403,"messages":["Logic function execution failed"]}`)
+comes from the platform catching an *exception*, not from wrapping a returned `Response`; it is
+the signature of a function that threw, which is a useful thing to be able to tell apart.
+
+The consequence for the handler is that `new Response(challenge, { headers: { 'content-type':
+'text/plain' } })` is correct exactly as written, and must not be "fixed" into a JSON body.
 
 The TRD specifies the callback path as `https://{domain}/s/whatsapp/webhook`. That path shape
 belongs to `httpRouteTriggerSettings`. `ServerRouteTriggerSettings` accepts **only**
