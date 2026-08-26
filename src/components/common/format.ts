@@ -12,7 +12,7 @@ import type { Lang, Translate } from './copy';
 
 export const CHAT_TIME_ZONE = 'Africa/Luanda';
 
-const LOCALE: Record<Lang, string> = { pt: 'pt-PT', en: 'en-GB' };
+const LOCALE: Record<Lang, string> = { pt: 'pt-PT', en: 'en-GB', es: 'es-MX' };
 
 const formatter = (lang: Lang, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat =>
   new Intl.DateTimeFormat(LOCALE[lang], { timeZone: CHAT_TIME_ZONE, ...options });
