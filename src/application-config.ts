@@ -240,6 +240,13 @@ export default defineApplication({
       value: '0.0040',
       type: FieldType.NUMBER,
     },
+    WA_TIME_ZONE: {
+      universalIdentifier: '7a1e20e5-4c17-4b3d-9f21-0e6b2c8d5417',
+      description:
+        'IANA time zone for every rendered date and every day boundary: chat and thread timestamps, the day separators, the {{now.*}} campaign variables, and the "created today" audience filter. Deliberately not the reader\u2019s browser \u2014 a rep must see the customer\u2019s day, or a message sent at 23:30 files itself under tomorrow. An unrecognised name falls back to the default rather than failing to render.',
+      value: 'Africa/Luanda',
+      type: FieldType.TEXT,
+    },
     WA_CONFIRMATION_LOCALE: {
       universalIdentifier: 'ccab3fbb-40a7-4042-bbfb-f4df1f135588',
       description:
