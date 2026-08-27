@@ -107,6 +107,31 @@ describe('the allow-list', () => {
     expect(resolveBindingPath('now.month', s)).toBe('agosto');
     expect(resolveBindingPath('now.year', s)).toBe('2026');
   });
+
+  /**
+   * The reported failure, which is worse than a wrong hour: this date is
+   * rendered *into the message the recipient reads*, so an evening campaign
+   * from Mexico quoted tomorrow's date back at the customer.
+   */
+  it('formats dates in the configured zone, not Angola\u2019s', () => {
+    const at = new Date('2026-08-15T23:30:00Z');
+
+    expect(resolveBindingPath('now.date', subject({ now: at, timeZone: 'America/Mexico_City' }))).toBe(
+      '15/08/2026',
+    );
+    expect(resolveBindingPath('now.month', subject({ now: at, timeZone: 'America/Mexico_City' }))).toBe(
+      'agosto',
+    );
+  });
+
+  it('keeps the default when the configured zone is unusable', () => {
+    const at = new Date('2026-08-15T23:30:00Z');
+
+    expect(resolveBindingPath('now.date', subject({ now: at, timeZone: 'Not/A_Zone' }))).toBe(
+      '16/08/2026',
+    );
+    expect(resolveBindingPath('now.date', subject({ now: at, timeZone: '' }))).toBe('16/08/2026');
+  });
 });
 
 describe('resolveParameters', () => {

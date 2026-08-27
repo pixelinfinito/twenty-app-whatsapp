@@ -1,21 +1,39 @@
+import { getApplicationVariable } from 'twenty-sdk/front-component';
+
+import { resolveTimeZone, TIME_ZONE_VARIABLE } from '../../domain/time-zone';
 import type { Lang, Translate } from './copy';
 
 /**
- * Dates, countdowns and sizes — in Africa/Luanda (FR-UI-5, specs/08 §8).
+ * Dates, countdowns and sizes (FR-UI-5, specs/08 §8).
  *
  * The time zone is not the reader's browser. A rep in Lisbon looking at an
  * Angolan number's conversation must see the day boundary the *customer* is on,
- * or a message sent at 23:30 in Luanda files itself under tomorrow and the day
- * separators stop meaning anything. Same reasoning as the campaign quiet-hours
- * rule (D-44).
+ * or a message sent at 23:30 files itself under tomorrow and the day separators
+ * stop meaning anything. Same reasoning as the campaign quiet-hours rule (D-44).
+ *
+ * Which zone that is comes from `WA_TIME_ZONE`, defaulting to `Africa/Luanda`.
+ * The rule above is what makes the browser wrong; it is not an argument for any
+ * particular zone, and outside Angola the literal produced the very failure the
+ * rule prevents.
  */
 
-export const CHAT_TIME_ZONE = 'Africa/Luanda';
+/**
+ * Read once, on first format rather than at import.
+ *
+ * The host populates the variable bundle before the component runs, so a
+ * module-scope read can land before there is anything to read. Deferring also
+ * keeps this module importable from a test that never sets one — the same
+ * reason `use-feed.ts` reads its intervals at call time.
+ */
+let cachedTimeZone: string | null = null;
+
+export const chatTimeZone = (): string =>
+  (cachedTimeZone ??= resolveTimeZone(getApplicationVariable(TIME_ZONE_VARIABLE)));
 
 const LOCALE: Record<Lang, string> = { pt: 'pt-PT', en: 'en-GB', es: 'es-MX' };
 
 const formatter = (lang: Lang, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat =>
-  new Intl.DateTimeFormat(LOCALE[lang], { timeZone: CHAT_TIME_ZONE, ...options });
+  new Intl.DateTimeFormat(LOCALE[lang], { timeZone: chatTimeZone(), ...options });
 
 export const parseDate = (value: string | null | undefined): Date | null => {
   if (typeof value !== 'string' || value.length === 0) return null;
@@ -35,7 +53,7 @@ export const clockTime = (value: string | null | undefined, lang: Lang): string 
 };
 
 /**
- * The calendar day in Luanda, as a comparable key — never a display string.
+ * The calendar day in the configured zone, as a comparable key — never a display string.
  *
  * Assembled from parts rather than formatted, because `format()` gives a
  * locale's *order* (17/08 here, 08/17 there) and a key whose shape depends on
