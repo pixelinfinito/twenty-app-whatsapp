@@ -104,15 +104,33 @@ export const entryRoutingKeys = (entry: MetaEntry): string[] => {
  */
 export const partitionEntriesByWorkspace = async (
   body: MetaWebhookBody,
-): Promise<{ groups: Map<string, MetaEntry[]>; unclaimedEntries: number }> => {
+): Promise<{
+  groups: Map<string, MetaEntry[]>;
+  unclaimedEntries: number;
+  /**
+   * The keys that found no owner, for the log.
+   *
+   * Without these, `unclaimed` reports only a count — and a count cannot be
+   * acted on. The operator can see the number they connected and the number
+   * Meta says it delivered for, but not that the two disagree, which is the
+   * only thing that matters and the only thing the count hides.
+   *
+   * The ids are safe to log: they are business identifiers Meta prints in its
+   * own dashboard, and `wa.account.claim_conflict` already logs both.
+   */
+  unclaimedKeys: string[];
+}> => {
   const cache = new Map<string, string | null>();
   const groups = new Map<string, MetaEntry[]>();
   let unclaimedEntries = 0;
+  const unclaimedKeys = new Set<string>();
 
   for (const entry of body.entry ?? []) {
     let workspaceId: string | null = null;
 
-    for (const key of entryRoutingKeys(entry)) {
+    const tried = entryRoutingKeys(entry);
+
+    for (const key of tried) {
       let owner = cache.get(key);
 
       if (owner === undefined) {
@@ -128,6 +146,7 @@ export const partitionEntriesByWorkspace = async (
 
     if (workspaceId === null) {
       unclaimedEntries += 1;
+      for (const key of tried) unclaimedKeys.add(key);
       continue;
     }
 
@@ -137,7 +156,7 @@ export const partitionEntriesByWorkspace = async (
     else group.push(entry);
   }
 
-  return { groups, unclaimedEntries };
+  return { groups, unclaimedEntries, unclaimedKeys: [...unclaimedKeys] };
 };
 
 export const handler = async (
@@ -193,9 +212,10 @@ export const handler = async (
 
   let groups: Map<string, MetaEntry[]>;
   let unclaimedEntries: number;
+  let unclaimedKeys: string[];
 
   try {
-    ({ groups, unclaimedEntries } = await partitionEntriesByWorkspace(body));
+    ({ groups, unclaimedEntries, unclaimedKeys } = await partitionEntriesByWorkspace(body));
   } catch (error) {
     logger.error('wa.webhook.routing_failed', {
       fn: 'wa-webhook-resolver',
@@ -212,7 +232,18 @@ export const handler = async (
    */
   if (groups.size === 0) {
     count(METRIC.WEBHOOK_UNCLAIMED);
-    logger.warn('wa.webhook.unclaimed', { fn: 'wa-webhook-resolver', unclaimedEntries });
+    /**
+     * The keys, not just the count. "1 unclaimed entry" tells an operator
+     * nothing they can act on; `wa:phone-number:123…` next to the number they
+     * connected tells them immediately whether Meta is delivering for a
+     * different number than the one they claimed — which is the only question
+     * this log exists to answer.
+     */
+    logger.warn('wa.webhook.unclaimed', {
+      fn: 'wa-webhook-resolver',
+      unclaimedEntries,
+      unclaimedKeys,
+    });
 
     return new Response({ ok: true, skipped: 'unclaimed number' }, { status: 200 });
   }
@@ -256,6 +287,14 @@ export default defineLogicFunction({
   timeoutSeconds: 15,
   serverRouteTriggerSettings: {
     forwardedRequestHeaders: [META_SIGNATURE_HEADER],
+    /**
+     * The platform answers a server route with POST only by default. Declaring
+     * both methods is what makes the one URL Meta asks for — the GET handshake
+     * and the POST delivery below — the same one, with no reverse-proxy alias
+     * in front of Twenty. Supported since Twenty 2.35.0 (upstream #24401),
+     * which is this app's minimum server.
+     */
+    httpMethods: ['GET', 'POST'],
   },
   handler,
 });

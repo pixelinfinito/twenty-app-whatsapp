@@ -1,4 +1,5 @@
-import { DEFAULT_TIME_ZONE, resolveTimeZone } from '../time-zone';
+import { startOfCivilDay, startOfNextCivilDay } from '../civil-day';
+import { DEFAULT_TIME_ZONE } from '../time-zone';
 
 /**
  * Translating a saved Twenty view into a Core API filter (FR-CAM-2a).
@@ -137,63 +138,6 @@ const asStringList = (value: unknown): string[] => {
 };
 
 /**
- * How far the campaign time zone is from UTC at a given instant.
- *
- * Read from `Intl` rather than hard-coded, so the day boundary stays right if
- * the zone is ever changed to one that observes daylight saving.
- */
-const zoneOffsetMs = (at: Date, timeZone: string): number => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: resolveTimeZone(timeZone),
-    hour12: false,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).formatToParts(at);
-
-  const field = (type: string): number =>
-    Number(parts.find((part) => part.type === type)?.value ?? '0');
-
-  const local = Date.UTC(
-    field('year'),
-    field('month') - 1,
-    field('day'),
-    field('hour') % 24,
-    field('minute'),
-    field('second'),
-  );
-
-  return local - Math.floor(at.getTime() / 1000) * 1000;
-};
-
-/**
- * Midnight **in the campaign's time zone**, expressed as an instant.
- *
- * A day filter used to be expanded against UTC midnight while every date the
- * campaign *renders* uses the configured zone — so "created today" meant
- * 01:00 to 01:00 local, and a contact added at half past midnight fell into
- * yesterday's audience (D-44). One hour of skew for Angola, more elsewhere,
- * and invisible either way: the audience simply comes back a little different
- * from the one the admin saw in the view.
- */
-const startOfDay = (at: Date, timeZone: string): Date => {
-  const shifted = new Date(at.getTime() + zoneOffsetMs(at, timeZone));
-  const localMidnight = Date.UTC(
-    shifted.getUTCFullYear(),
-    shifted.getUTCMonth(),
-    shifted.getUTCDate(),
-  );
-
-  return new Date(localMidnight - zoneOffsetMs(new Date(localMidnight), timeZone));
-};
-
-const addDays = (at: Date, days: number): Date =>
-  new Date(at.getTime() + days * 86_400_000);
-
-/**
  * One `viewFilter` row as a Core filter fragment.
  *
  * Returns a string when it cannot be translated; the caller collects those and
@@ -211,7 +155,7 @@ export const translateFilter = ({
   filter: ViewFilterRow;
   field: FieldDescriptor;
   now: Date;
-  /** The zone the day filters partition on — see `startOfDay`. */
+  /** The zone the day filters partition on — see `startOfCivilDay`. */
   timeZone?: string;
 }): CoreFilter | string => {
   const operand = filter.operand.toUpperCase() as ViewFilterOperand;
@@ -392,14 +336,16 @@ export const translateFilter = ({
       case VIEW_FILTER_OPERAND.IS: {
         if (!valid) return `${where}: invalid date`;
 
-        const from = startOfDay(parsed!, timeZone);
-
-        return wrap({ gte: from.toISOString(), lt: addDays(from, 1).toISOString() });
+        return wrap({
+          gte: startOfCivilDay(parsed!, timeZone).toISOString(),
+          lt: startOfNextCivilDay(parsed!, timeZone).toISOString(),
+        });
       }
       case VIEW_FILTER_OPERAND.IS_TODAY: {
-        const from = startOfDay(now, timeZone);
-
-        return wrap({ gte: from.toISOString(), lt: addDays(from, 1).toISOString() });
+        return wrap({
+          gte: startOfCivilDay(now, timeZone).toISOString(),
+          lt: startOfNextCivilDay(now, timeZone).toISOString(),
+        });
       }
       case VIEW_FILTER_OPERAND.IS_IN_PAST:
         return wrap({ lt: now.toISOString() });

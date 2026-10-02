@@ -11,6 +11,11 @@
 # built from. This is also how you claim ownership of your app in a Twenty
 # marketplace: the claim flow verifies you own the GitHub account or
 # organization the provenance points to.
+#
+# A tag that is not the source it names is worse than no tag: the version
+# anyone can install is not the version anyone can read. The guard below
+# refuses to publish a `vX.Y.Z` tag from a commit whose package.json still
+# says something else — tag the release commit, never the one before it.
 name: Publish
 
 on:
@@ -30,6 +35,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: The tag must be the version it names
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag v$tag is on a commit whose package.json is $version."
+            echo "Tag the release commit that bumps the version, then push the tag again."
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

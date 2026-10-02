@@ -65,6 +65,16 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
+      # Same as ci.yml: the client comes from the instance being tested,
+      # which is exactly the schema this job exists to check against.
+      - name: Generate the API client
+        run: |
+          yarn twenty remote:add --url "$TWENTY_API_URL" --api-key "$TWENTY_API_KEY"
+          yarn twenty dev:generate-client .
+        env:
+          TWENTY_API_URL: ${{ steps.twenty.outputs.server-url }}
+          TWENTY_API_KEY: ${{ steps.twenty.outputs.api-key }}
+
       # Lint and typecheck run here too. They are the checks that catch a
       # renamed SDK export, which is exactly the kind of upstream break this
       # job exists to find — and they cost seconds.

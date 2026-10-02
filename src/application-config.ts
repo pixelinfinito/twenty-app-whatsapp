@@ -41,8 +41,6 @@ export default defineApplication({
    * *not* used there.
    */
   logo: 'public/logo-whatsapp.svg',
-  aboutDescription:
-    'A production-ready Meta WhatsApp Cloud API app for Twenty. It ships with an inbox, template synchronization, consent-aware messaging, and campaign tooling with strong webhook observability.',
   author: 'Pixel Infinito',
   websiteUrl: 'https://pixel.ao',
   /**

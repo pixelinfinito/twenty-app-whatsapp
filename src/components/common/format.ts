@@ -1,5 +1,6 @@
 import { getApplicationVariable } from 'twenty-sdk/front-component';
 
+import { civilDayKeyOf, previousCivilDayKey } from '../../domain/civil-day';
 import { resolveTimeZone, TIME_ZONE_VARIABLE } from '../../domain/time-zone';
 import type { Lang, Translate } from './copy';
 
@@ -25,10 +26,17 @@ import type { Lang, Translate } from './copy';
  * keeps this module importable from a test that never sets one — the same
  * reason `use-feed.ts` reads its intervals at call time.
  */
-let cachedTimeZone: string | null = null;
+let cachedTimeZone: { raw: string | undefined; zone: string } | null = null;
 
-export const chatTimeZone = (): string =>
-  (cachedTimeZone ??= resolveTimeZone(getApplicationVariable(TIME_ZONE_VARIABLE)));
+export const chatTimeZone = (): string => {
+  const raw = getApplicationVariable(TIME_ZONE_VARIABLE);
+
+  if (cachedTimeZone === null || cachedTimeZone.raw !== raw) {
+    cachedTimeZone = { raw, zone: resolveTimeZone(raw) };
+  }
+
+  return cachedTimeZone.zone;
+};
 
 const LOCALE: Record<Lang, string> = { pt: 'pt-PT', en: 'en-GB', es: 'es-MX' };
 
@@ -52,29 +60,11 @@ export const clockTime = (value: string | null | undefined, lang: Lang): string 
     : formatter(lang, { hour: '2-digit', minute: '2-digit' }).format(date);
 };
 
-/**
- * The calendar day in the configured zone, as a comparable key — never a display string.
- *
- * Assembled from parts rather than formatted, because `format()` gives a
- * locale's *order* (17/08 here, 08/17 there) and a key whose shape depends on
- * the reader's language is one that stops comparing equal when the language
- * changes.
- */
+/** The calendar day in the configured zone, as a comparable key. */
 export const dayKey = (value: string | null | undefined): string => {
   const date = parseDate(value);
 
-  if (date === null) return '';
-
-  const parts = formatter('en', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-
-  const of = (type: Intl.DateTimeFormatPartTypes): string =>
-    parts.find((part) => part.type === type)?.value ?? '';
-
-  return `${of('year')}-${of('month')}-${of('day')}`;
+  return date === null ? '' : civilDayKeyOf(date, chatTimeZone());
 };
 
 /** The heading between two days of a conversation. */
@@ -87,11 +77,16 @@ export const daySeparator = (
   const key = dayKey(value);
 
   if (key === '') return '';
-  if (key === dayKey(now.toISOString())) return t('chat.today');
 
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const nowKey = dayKey(now.toISOString());
 
-  if (key === dayKey(yesterday.toISOString())) return t('chat.yesterday');
+  if (key === nowKey) return t('chat.today');
+
+  // The previous *civil* day, not now minus 24 hours: across a transition the
+  // subtraction lands on the wrong calendar day (in New York, "now" of
+  // 00:30 on March 9th minus a day is 23:30 on March 7th), and a Sunday
+  // evening conversation stops being "Yesterday".
+  if (key === previousCivilDayKey(nowKey)) return t('chat.yesterday');
 
   const date = parseDate(value)!;
 

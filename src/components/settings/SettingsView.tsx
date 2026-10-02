@@ -712,33 +712,34 @@ export const SettingsView = () => {
 
           <Card title={t('settings.callback')}>
             {/*
-              First, because it is the step that decides whether any of the
-              three URLs below is the right one to paste. Presenting them
-              without it is what made the callback URL look self-serving when
-              it is really half of a proxy rule the operator has to write.
+              First, because it is the step that decides which URL to paste.
+              The direct form is the callback Meta asks for — one URL answering
+              both the GET handshake and the POST deliveries; the two below it
+              are the legacy alternatives for a Twenty that does not route GET
+              to server routes.
             */}
-            <Banner>{t('settings.callbackProxyNote')}</Banner>
+            <Banner>{t('settings.callbackDirectNote')}</Banner>
             {/*
               On local development these URLs answer only on this machine.
               Saying so beside them is the difference between an operator
               pasting a tunnel URL into Meta and pasting `localhost` — which
               fails without an error anywhere they can see.
             */}
-            {isLocalCallback(data?.webhook.callbackUrl ?? null) ? (
+            {isLocalCallback(data?.webhook.directUrl ?? null) ? (
               <Banner>
                 {t('settings.callbackLocalNote', {
-                  path: '/whatsapp/webhook',
+                  path: '/webhooks/server/…',
                 })}
               </Banner>
             ) : null}
             <Copyable
-              label={t('settings.callbackUrl')}
-              value={data?.webhook.callbackUrl ?? null}
+              label={t('settings.directUrl')}
+              value={data?.webhook.directUrl ?? null}
               copyLabel={t('common.copy')}
             />
             <Copyable
-              label={t('settings.directUrl')}
-              value={data?.webhook.directUrl ?? null}
+              label={t('settings.callbackUrl')}
+              value={data?.webhook.callbackUrl ?? null}
               copyLabel={t('common.copy')}
             />
             <Copyable

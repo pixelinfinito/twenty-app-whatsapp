@@ -9,7 +9,7 @@ import { useLocale } from 'twenty-sdk/front-component';
  * denial, or having counsel change the phrasing of a consent notice, is an edit
  * here and not a deploy of the send path.
  *
- * **The two languages are written side by side, not in two tables.** Parallel
+ * **The languages are written side by side, not in parallel tables.** Separate
  * tables let a key exist in one and not the other, and the failure is invisible
  * until a reader with the wrong locale meets an English string in a Portuguese
  * screen — or nothing at all. Paired entries make that unrepresentable, and a
@@ -2741,23 +2741,20 @@ const COPY = {
     es: 'Callback de Meta',
   },
   'settings.callbackUrl': {
-    pt: 'URL do callback (alias no proxy)',
-    en: 'Callback URL (proxy alias)',
-    es: 'URL de callback (alias de proxy)',
+    pt: 'URL do callback (alias legado no proxy)',
+    en: 'Callback URL (legacy proxy alias)',
+    es: 'URL de callback (alias heredado de proxy)',
   },
   /**
-   * The sentence that was missing, and the whole of issue #1.
-   *
-   * The Meta dashboard takes **one** URL and uses it for both the GET
-   * handshake and the POST deliveries; Twenty answers those on two different
-   * paths. The alias is the only thing that makes one URL out of two, and an
-   * operator who does not know it has to exist will paste it, watch
-   * verification fail, and have nothing to go on.
+   * The sentence that was missing — updated when the resolver began answering
+   * the GET handshake itself: the direct form **is** the callback, and the
+   * alias is only a fallback for a Twenty that does not route GET to server
+   * routes.
    */
-  'settings.callbackProxyNote': {
-    pt: 'A Meta usa um só URL para o GET de verificação e para os POST de eventos; o Twenty responde-lhes em caminhos diferentes. O URL do callback só funciona depois de criar esta regra no seu proxy: GET → URL de verificação, POST → forma directa. Sem essa regra, aponte a Meta directamente à forma directa (se a sua instância encaminhar GET para rotas de servidor) e verifique pelo URL de verificação.',
-    en: 'Meta uses a single URL for both the GET verification and the POST events; Twenty answers those on different paths. The callback URL only works once you add this rule to your proxy: GET → verification URL, POST → direct form. Without that rule, point Meta straight at the direct form (if your instance routes GET to server routes) and verify at the verification URL.',
-    es: 'Meta usa una sola URL para la verificación GET y para los eventos POST; Twenty los atiende en rutas distintas. La URL de callback solo funciona si agregas esta regla a tu proxy: GET → URL de verificación, POST → forma directa. Sin esa regla, apunta Meta directamente a la forma directa (si tu instancia enruta GET a rutas de servidor) y verifica en la URL de verificación.',
+  'settings.callbackDirectNote': {
+    pt: 'A Meta usa um só URL para o GET de verificação e para os POST de eventos. Cole acima a forma directa — responde a ambos. O alias no proxy e o URL de verificação são alternativas legadas para versões do Twenty que não encaminham GET para rotas de servidor.',
+    en: 'Meta uses a single URL for both the GET verification and the POST events. Paste the direct form above — it answers both. The proxy alias and the verification URL are legacy alternatives for Twenty versions that do not route GET to server routes.',
+    es: 'Meta usa una sola URL para la verificación GET y para los eventos POST. Pega arriba la forma directa: responde a ambas. El alias de proxy y la URL de verificación son alternativas heredadas para versiones de Twenty que no enrutan GET a rutas de servidor.',
   },
   /**
    * Shown only when the server's own address is local. The path is
@@ -2770,14 +2767,14 @@ const COPY = {
     es: 'Estas direcciones son locales de esta máquina: Meta no puede alcanzarlas. En Meta usa la URL pública de tu túnel (ngrok, cloudflared, …) con la misma ruta {path}.',
   },
   'settings.directUrl': {
-    pt: 'Forma directa (POST)',
-    en: 'Direct form (POST)',
-    es: 'Forma directa (POST)',
+    pt: 'URL do callback (directo — GET e POST)',
+    en: 'Callback URL (direct — GET and POST)',
+    es: 'URL de callback (directa: GET y POST)',
   },
   'settings.verifyUrl': {
-    pt: 'URL de verificação (GET)',
-    en: 'Verification URL (GET)',
-    es: 'URL de verificación (GET)',
+    pt: 'URL de verificação (GET, legado)',
+    en: 'Verification URL (GET, legacy)',
+    es: 'URL de verificação (GET, heredado)',
   },
   'settings.verifyToken': {
     pt: 'Token de verificação',
@@ -3137,7 +3134,11 @@ type Table = Record<string, string>;
 const tableFor = (lang: Lang): Table =>
   Object.fromEntries(Object.entries(COPY).map(([key, entry]) => [key, entry[lang]]));
 
-export const TABLES: Record<Lang, Table> = { pt: tableFor('pt'), en: tableFor('en') };
+export const TABLES: Record<Lang, Table> = {
+  pt: tableFor('pt'),
+  en: tableFor('en'),
+  es: tableFor('es'),
+};
 
 export type Translate = (key: string, values?: Record<string, string | number>) => string;
 
