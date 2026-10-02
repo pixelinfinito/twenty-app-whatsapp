@@ -90,6 +90,16 @@ describe('startOfCivilDay and startOfNextCivilDay', () => {
     expect(startOfNextCivilDay(at, 'Africa/Luanda').toISOString()).toBe('2026-08-16T23:00:00.000Z');
   });
 
+  it('answers with the first piece of a day that rolls back across midnight', () => {
+    // America/Goose_Bay ended DST on 2009-11-01 by rolling midnight back into
+    // October 31st: November 1st runs 03:00–03:15Z, is October 31st again
+    // until 04:00Z, then November 1st resumes. The day begins at its first
+    // piece — a binary search over the civil date answers with the second.
+    expect(
+      startOfCivilDay(new Date('2009-11-01T03:00:00.000Z'), 'America/Goose_Bay').toISOString(),
+    ).toBe('2009-11-01T03:00:00.000Z');
+  });
+
   it('resolves the boundary instants to the exact civil day they separate', () => {
     const from = startOfCivilDay(new Date('2026-03-08T12:00:00.000Z'), 'America/New_York');
     const to = startOfNextCivilDay(new Date('2026-03-08T12:00:00.000Z'), 'America/New_York');

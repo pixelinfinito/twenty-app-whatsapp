@@ -79,11 +79,11 @@ Four defects reported from a live 2.31.6 install ([#1]), all confirmed against t
   "created today" audience filter. An unrecognised name degrades to the default rather than
   blanking the panel.
 - **Day boundaries survive daylight saving.** A day with a transition is 23 or 25 hours, and the
-  old offset arithmetic (`+ 86_400_000`, an offset-snapped midnight) drifted an hour past the next
-  midnight on every one of them: in New York, "created today" ended an hour early on March 8th and
-  leaked an hour of November 2nd into November 1st, and a Sunday-evening conversation stopped being
-  "Yesterday" at 00:30 the next morning. Boundaries are now found from the zone itself, so the
-  window is first midnight to *next* midnight wherever the clocks move.
+  old fixed `+ 86_400_000` window drifted an hour on every one of them: in New York, "created
+  today" leaked the first hour of March 9th into March 8th's audience in spring and cut the last
+  hour off November 1st in autumn, and a Sunday-evening conversation stopped being "Yesterday" at
+  00:30 the next morning. Boundaries are now found from the zone itself, so the window runs first
+  midnight to *next* midnight wherever the clocks move.
 
 ### Fixed — the package typechecks again ([#3])
 

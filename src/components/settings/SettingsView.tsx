@@ -93,6 +93,17 @@ export const isLocalCallback = (url: string | null): boolean => {
   );
 };
 
+/** The path of an absolute URL the server printed, for the local-tunnel note. */
+export const pathOf = (url: string | null): string => {
+  if (url === null) return '';
+
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
+  }
+};
+
 const Copyable = ({
   label,
   value,
@@ -728,7 +739,7 @@ export const SettingsView = () => {
             {isLocalCallback(data?.webhook.directUrl ?? null) ? (
               <Banner>
                 {t('settings.callbackLocalNote', {
-                  path: '/webhooks/server/…',
+                  path: pathOf(data?.webhook.directUrl ?? null),
                 })}
               </Banner>
             ) : null}

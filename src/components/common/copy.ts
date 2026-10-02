@@ -2774,7 +2774,7 @@ const COPY = {
   'settings.verifyUrl': {
     pt: 'URL de verificação (GET, legado)',
     en: 'Verification URL (GET, legacy)',
-    es: 'URL de verificação (GET, heredado)',
+    es: 'URL de verificación (GET, heredado)',
   },
   'settings.verifyToken': {
     pt: 'Token de verificação',

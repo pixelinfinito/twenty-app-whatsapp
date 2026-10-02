@@ -76,31 +76,84 @@ export const previousCivilDayKey = (key: string): string =>
  * civil midnight, except where the zone's clocks jump over 00:00, when it is
  * the first instant that exists on that date.
  *
- * Searched, not computed: the zone's offset changes at transitions the lookup
- * cannot see coming, and the civil date is a non-decreasing function of the
- * instant, so the first instant of the day is the boundary of the predicate
- * "civil date ≥ this day". The search bracket is wider than the widest offset
- * either side, which pins the predicate false below and true above.
+ * Scanned, not computed: the zone's offset changes at transitions the lookup
+ * cannot see coming, and the civil date is not even monotone — America/
+ * Goose_Bay ended DST on 2009-11-01 by rolling midnight back into October
+ * 31st, so November 1st exists in two pieces and a binary search over "civil
+ * date ≥ this day" answers with the *second* piece. The bracket is stepped in
+ * five-minute increments and the first rise of "civil date == this day" is
+ * refined by halving; IANA never puts two transitions inside one increment,
+ * so the predicate is single-step within it. Answered per (zone, day) and
+ * memoised — the boundaries never move once found.
  */
 export const startOfCivilDay = (at: Date, timeZone: string): Date =>
-  startOfCivilDayKey(civilDayKeyOf(at, timeZone), timeZone);
+  new Date(firstInstantOfCivilDay(civilDayKeyOf(at, timeZone), timeZone));
 
 /** Like `startOfCivilDay`, for the day *after* the one `at` falls in. */
 export const startOfNextCivilDay = (at: Date, timeZone: string): Date =>
-  startOfCivilDayKey(nextCivilDayKey(civilDayKeyOf(at, timeZone)), timeZone);
+  new Date(firstInstantOfCivilDay(nextCivilDayKey(civilDayKeyOf(at, timeZone)), timeZone));
 
-const startOfCivilDayKey = (key: string, timeZone: string): Date => {
+const SCAN_STEP_MS = 5 * 60_000;
+
+const boundaries = new Map<string, number>();
+
+const firstInstantOfCivilDay = (key: string, timeZone: string): number =>
+  firstInstantOfCivilDayScanned(key, timeZone, 0);
+
+const firstInstantOfCivilDayScanned = (
+  key: string,
+  timeZone: string,
+  skippedDays: number,
+): number => {
+  const memoKey = `${timeZone} ${key}`;
+
+  const memoised = boundaries.get(memoKey);
+  if (memoised !== undefined) return memoised;
+
   const wall = Date.parse(`${key}T00:00:00.000Z`);
+  const from = wall - DAY_MS - MAX_OFFSET_MS;
+  const to = wall + DAY_MS + MAX_OFFSET_MS;
 
-  let before = wall - DAY_MS - MAX_OFFSET_MS;
-  let after = wall + MAX_OFFSET_MS;
+  let first: number | null = null;
+  let wasMatch = civilDayKeyOf(new Date(from), timeZone) === key;
 
+  for (let at = from + SCAN_STEP_MS; at <= to; at += SCAN_STEP_MS) {
+    const isMatch = civilDayKeyOf(new Date(at), timeZone) === key;
+
+    if (isMatch && !wasMatch) {
+      first = refineBoundary(at - SCAN_STEP_MS, at, key, timeZone);
+      break;
+    }
+
+    wasMatch = isMatch;
+  }
+
+  if (first === null) {
+    /**
+     * No instant of this civil date exists — a zone can skip a whole date
+     * when it crosses the date line westward (Samoa skipped 2011-12-30). The
+     * day's beginning is then the next existing day's, which is also the
+     * exclusive end the window before it wants. Never recurses far: dates a
+     * zone skips are beside each other by construction.
+     */
+    if (skippedDays < 4) return firstInstantOfCivilDayScanned(nextCivilDayKey(key), timeZone, skippedDays + 1);
+
+    return wall;
+  }
+
+  boundaries.set(memoKey, first);
+
+  return first;
+};
+
+/** The first instant in the step where the civil date became the day. */
+const refineBoundary = (before: number, after: number, key: string, timeZone: string): number => {
   while (after - before > 1) {
     const middle = Math.floor((before + after) / 2);
 
-    if (civilDayKeyOf(new Date(middle), timeZone) >= key) after = middle;
+    if (civilDayKeyOf(new Date(middle), timeZone) === key) after = middle;
     else before = middle;
   }
 
-  return new Date(after);
+  return after;
 };

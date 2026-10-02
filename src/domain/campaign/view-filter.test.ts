@@ -232,9 +232,9 @@ describe('date filters', () => {
 
   /**
    * A day with a transition is 23 or 25 hours, and the window must end at the
-   * *next* midnight — the old code added 24 hours and drifted an hour past it
-   * on every one of these days, shaving an hour off "today"'s audience in
-   * spring and leaking an hour of tomorrow into it in autumn.
+   * *next* midnight — the old fixed `+ 86_400_000` window drifted an hour on
+   * every one of these days: in spring it leaked the first hour of tomorrow
+   * into "today"'s audience, in autumn it cut today's last hour off.
    */
   it.each([
     ['23h spring-forward day', 'America/New_York', '2026-03-08T12:00:00.000Z', '2026-03-08T05:00:00.000Z', '2026-03-09T04:00:00.000Z'],
@@ -254,34 +254,6 @@ describe('date filters', () => {
       ).toEqual({ createdAt: { gte: from, lt: to } });
     },
   );
-
-  /**
-   * The comparators are half-open, so the window is [from, to): the first
-   * instant of the day is in it, the first instant of the next day is not —
-   * including when those two instants are only 23 hours apart.
-   */
-  it('includes the boundary instants of a transition day exactly', () => {
-    const filter = translateFilter({
-      filter: row({ operand: 'IS_TODAY' }),
-      field: field('createdAt', 'DATE_TIME'),
-      now: new Date('2026-03-08T12:00:00.000Z'),
-      timeZone: 'America/New_York',
-    }) as { createdAt: { gte: string; lt: string } };
-
-    const from = new Date(filter.createdAt.gte).getTime();
-    const to = new Date(filter.createdAt.lt).getTime();
-
-    const included = (instant: string): boolean => {
-      const at = new Date(instant).getTime();
-
-      return at >= from && at < to;
-    };
-
-    expect(included('2026-03-08T05:00:00.000Z')).toBe(true);
-    expect(included('2026-03-08T04:59:59.999Z')).toBe(false);
-    expect(included('2026-03-09T03:59:59.999Z')).toBe(true);
-    expect(included('2026-03-09T04:00:00.000Z')).toBe(false);
-  });
 
   it('translates IS_BEFORE and IS_AFTER', () => {
     expect(
