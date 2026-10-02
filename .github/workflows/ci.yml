@@ -48,6 +48,25 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
+      # The typed client is generated from the spawned instance's schema.
+      # The instance is fresh, so the app's own objects exist there only after
+      # the app is applied — generating before that produces a schema without
+      # them, and `schema-enums.test.ts` (which reads the generated file by
+      # path) and every `client.query` result type fail for want of them.
+      - name: Apply the app to the instance
+        run: |
+          yarn twenty remote:add --url "$TWENTY_API_URL" --api-key "$TWENTY_API_KEY"
+          yarn twenty apply . --force
+        env:
+          TWENTY_API_URL: ${{ steps.twenty.outputs.server-url }}
+          TWENTY_API_KEY: ${{ steps.twenty.outputs.api-key }}
+
+      - name: Generate the API client
+        run: yarn twenty dev:generate-client .
+        env:
+          TWENTY_API_URL: ${{ steps.twenty.outputs.server-url }}
+          TWENTY_API_KEY: ${{ steps.twenty.outputs.api-key }}
+
       - name: Lint
         run: yarn lint
 

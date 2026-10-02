@@ -31,6 +31,25 @@ Record the versions before you start — the answers only mean something attache
 
 ---
 
+## Part 0 — Cut the release (engineering)
+
+The version anyone can install must be the version anyone can read. 0.1.2 was published to npm
+from a commit that is not on any branch, with no tag, and its full source is not recoverable —
+the tarball ships only the logic-function entries, with everything else bundled. Nothing below
+can bring that source back; what follows exists so it cannot happen again.
+
+| # | Step | Expected | Pass |
+|---|---|---|---|
+| P1 | Bump `package.json` `version` in the release commit; update CHANGELOG's Unreleased into a dated section | `git log -1` shows the bump; CHANGELOG matches | ☐ |
+| P2 | Tag **that** commit: `git tag vX.Y.Z && git push origin vX.Y.Z` | The Publish workflow runs | ☐ |
+| P3 | The workflow's tag guard passes | Tag `vX.Y.Z` equals `package.json` `version`; a mismatch fails the job before publishing | ☐ |
+| P4 | `npm view <pkg>@X.Y.Z dist.tarball` after publish | The published tarball's `repository`/provenance points at this repo at this tag | ☐ |
+
+If the guard fails, do not retag on a different commit: fix `package.json`, and tag the commit
+that carries the fix.
+
+---
+
 ## Part A — Install from nothing (10.11, runbook rehearsal)
 
 A rehearsal means a **fresh workspace**, not the one already working. Half the value is finding
@@ -44,9 +63,9 @@ incomplete — those notes are the deliverable, more than the ticks.
 | A1 | Deploy and install the app | It appears under Settings → Applications | ☐ |
 | A2 | Read the post-install function log | It prints the callback URL, the direct URL, the required field list, and `rolesMissing: []` | ☐ |
 | A3 | Set the four server variables | Settings → Connection shows `verifyTokenConfigured: true` | ☐ |
-| A4 | Reverse-proxy block added and reloaded | `curl https://<host>/s/whatsapp/verify` answers (401/400, not 404) | ☐ |
+| A4 | `curl "https://<host>/webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd?hub.mode=subscribe&hub.challenge=probe&hub.verify_token=<token>"` | Returns `probe` (not HTML, not 404) | ☐ |
 | A5 | Enter WABA id + `phone_number_id`, **Test connection** | Green; the account row shows the verified name | ☐ |
-| A6 | Paste the callback URL and verify token into Meta, **Verify and save** | Meta reports the callback verified | ☐ |
+| A6 | Paste the direct callback URL and verify token into Meta, **Verify and save** | Meta reports the callback verified | ☐ |
 | A7 | Subscribe the webhook fields (all seven) | All seven ticked in the dashboard | ☐ |
 | A8 | **Verify the WABA subscription** with the `curl` in §5.1 step 10 | The app is listed. `{"data":[]}` is a **fail** — this is the failure that looks like success | ☐ |
 | A9 | Message the number from a handset | The conversation appears in the Inbox within 5 s | ☐ |

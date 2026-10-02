@@ -3,7 +3,7 @@ import { useTheme } from 'twenty-ui/theme-constants';
 
 import type { ThreadProjection } from '../../domain/feed/projection';
 import { useActions } from '../common/actions';
-import { useCopy, type Translate } from '../common/copy';
+import { useCopy, type Lang, type Translate } from '../common/copy';
 import { Glyph, type IconName } from '../common/icons';
 import { ActionButton, Banner, EmptyState } from '../common/ui';
 import { countdown, displayPhone, relativeTime } from '../common/format';
@@ -87,7 +87,7 @@ const ThreadRow = ({
   selected: boolean;
   onSelect: () => void;
   now: Date;
-  lang: 'pt' | 'en';
+  lang: Lang;
   t: Translate;
   viewerId: string | null;
 }) => {

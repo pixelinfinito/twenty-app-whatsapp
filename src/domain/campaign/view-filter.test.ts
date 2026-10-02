@@ -230,6 +230,31 @@ describe('date filters', () => {
     expect(filter.createdAt.gte).toBe('2026-03-03T23:00:00.000Z');
   });
 
+  /**
+   * A day with a transition is 23 or 25 hours, and the window must end at the
+   * *next* midnight — the old fixed `+ 86_400_000` window drifted an hour on
+   * every one of these days: in spring it leaked the first hour of tomorrow
+   * into "today"'s audience, in autumn it cut today's last hour off.
+   */
+  it.each([
+    ['23h spring-forward day', 'America/New_York', '2026-03-08T12:00:00.000Z', '2026-03-08T05:00:00.000Z', '2026-03-09T04:00:00.000Z'],
+    ['25h fall-back day', 'America/New_York', '2026-11-01T12:00:00.000Z', '2026-11-01T04:00:00.000Z', '2026-11-02T05:00:00.000Z'],
+    ['25h fall-back day', 'Europe/Lisbon', '2026-10-25T12:00:00.000Z', '2026-10-24T23:00:00.000Z', '2026-10-26T00:00:00.000Z'],
+    ['23h spring-forward day', 'Australia/Sydney', '2026-10-04T03:00:00.000Z', '2026-10-03T14:00:00.000Z', '2026-10-04T13:00:00.000Z'],
+  ] as [string, string, string, string, string][])(
+    'spans the %s from first midnight to next midnight',
+    (_label, timeZone, now, from, to) => {
+      expect(
+        translateFilter({
+          filter: row({ operand: 'IS_TODAY' }),
+          field: field('createdAt', 'DATE_TIME'),
+          now: new Date(now),
+          timeZone,
+        }),
+      ).toEqual({ createdAt: { gte: from, lt: to } });
+    },
+  );
+
   it('translates IS_BEFORE and IS_AFTER', () => {
     expect(
       translateFilter({

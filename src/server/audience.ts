@@ -1,3 +1,4 @@
+import { config } from './config';
 import type { AudienceCursor, AudienceDefinition } from '../domain/campaign/audience';
 import { translateViewFilters } from '../domain/campaign/view-filter';
 import { pageOf, query } from './repositories/base';
@@ -136,7 +137,16 @@ export const resolveViewFilter = async (
     fieldsForObject(view.objectMetadataId),
   ]);
 
-  const translated = translateViewFilters({ filters, groups, fields, now });
+  // Without the zone, "created today" partitions on Angola's midnight while the
+  // operator is looking at their own — the audience comes back a little
+  // different from the one the view showed (D-44).
+  const translated = translateViewFilters({
+    filters,
+    groups,
+    fields,
+    now,
+    timeZone: config.timeZone(),
+  });
 
   if (!translated.ok) {
     throw new AudienceError(

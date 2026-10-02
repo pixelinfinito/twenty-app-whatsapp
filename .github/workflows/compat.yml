@@ -65,6 +65,22 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
+      # Same as ci.yml: apply the app first — the client can only be
+      # generated from a schema that already contains the app's objects.
+      - name: Apply the app to the instance
+        run: |
+          yarn twenty remote:add --url "$TWENTY_API_URL" --api-key "$TWENTY_API_KEY"
+          yarn twenty apply . --force
+        env:
+          TWENTY_API_URL: ${{ steps.twenty.outputs.server-url }}
+          TWENTY_API_KEY: ${{ steps.twenty.outputs.api-key }}
+
+      - name: Generate the API client
+        run: yarn twenty dev:generate-client .
+        env:
+          TWENTY_API_URL: ${{ steps.twenty.outputs.server-url }}
+          TWENTY_API_KEY: ${{ steps.twenty.outputs.api-key }}
+
       # Lint and typecheck run here too. They are the checks that catch a
       # renamed SDK export, which is exactly the kind of upstream break this
       # job exists to find — and they cost seconds.

@@ -277,10 +277,10 @@ export const install = async (payload: InstallPayload): Promise<PostInstallResul
 
   const base = (process.env.TWENTY_API_URL ?? '').replace(/\/+$/, '');
   /**
-   * The reverse-proxy alias (D-1), *not* an app route: `/s/` is the namespace
-   * for `httpRouteTriggerSettings` paths, and no function declares
-   * `/whatsapp/webhook` there. This printed `/s/whatsapp/webhook` until the
-   * path was corrected, which is a 404 on every install.
+   * The legacy proxy-alias path, not an app route: `/s/` is the namespace for
+   * `httpRouteTriggerSettings` paths, and no function declares
+   * `/whatsapp/webhook` there. The callback that needs no proxy is
+   * `directUrl` below.
    */
   const callbackUrl = base === '' ? null : `${base}/whatsapp/webhook`;
 
@@ -318,10 +318,10 @@ export const install = async (payload: InstallPayload): Promise<PostInstallResul
     /**
      * Without this line the three URLs read as three interchangeable options,
      * and the alias is the one that looks most like a callback — so it is the
-     * one that gets pasted, and it 404s until the proxy rule exists.
+     * one that gets pasted, and it answers nothing without a proxy rule.
      */
     callbackUrlNote:
-      'callbackUrl is a reverse-proxy alias you must configure: GET -> verifyUrl, POST -> directCallbackUrl. Without that rule, point Meta at directCallbackUrl and verify at verifyUrl. See README "Configure the webhook in Meta".',
+      'Paste directCallbackUrl into Meta: it answers the GET handshake and the POST deliveries. callbackUrl is only the legacy proxy alias (GET -> verifyUrl, POST -> directCallbackUrl) for a Twenty that does not route GET to server routes. See README "Configure the webhook in Meta".',
     requiredWebhookFields: [...REQUIRED_WEBHOOK_FIELDS],
     /**
      * Nobody is assigned to a role here, and that is not an omission. The

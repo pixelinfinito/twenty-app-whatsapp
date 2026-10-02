@@ -414,18 +414,17 @@ const diagnostics = async () => {
     rows,
     webhook: {
       /**
-       * The reverse-proxy alias to paste into Meta — and it only answers once
-       * that alias exists (D-1, specs/11 § Reverse proxy configuration).
-       *
-       * It is deliberately **not** under `/s/`: that prefix is the app's own
-       * HTTP-route namespace, and no logic function declares
-       * `/whatsapp/webhook` there. Publishing `/s/whatsapp/webhook` — as this
-       * did until the alias path was corrected — hands the operator a 404 and
-       * a webhook that can never be configured.
+       * The URL to paste into Meta is `directUrl`: the resolver declares both
+       * HTTP methods (D-1), so one URL answers the GET handshake and the POST
+       * deliveries with no proxy rule at all.
+       */
+      directUrl: base === '' ? null : `${base}/webhooks/server/${LF_WEBHOOK_RESOLVER}`,
+      /**
+       * The legacy fallback for a Twenty that does not route GET to server
+       * routes: a method-splitting alias an operator configures in their own
+       * reverse proxy, GET → `verifyUrl`, POST → `directUrl`.
        */
       callbackUrl: base === '' ? null : `${base}/whatsapp/webhook`,
-      /** The POST half, which the alias forwards to. Live without any proxy. */
-      directUrl: base === '' ? null : `${base}/webhooks/server/${LF_WEBHOOK_RESOLVER}`,
       verifyUrl: base === '' ? null : `${base}/s/whatsapp/verify`,
       verifyTokenConfigured: (process.env.META_VERIFY_TOKEN ?? '').length > 0,
       requiredFields: [...REQUIRED_WEBHOOK_FIELDS],
