@@ -97,6 +97,7 @@ jobs:
       - name: Integration smoke suite
         run: yarn test
         env:
+          NODE_OPTIONS: --import=${{ github.workspace }}/.github/scripts/pace-app-uploads.mjs
           TWENTY_API_URL: ${{ steps.twenty.outputs.server-url }}
           TWENTY_API_KEY: ${{ steps.twenty.outputs.api-key }}
 
