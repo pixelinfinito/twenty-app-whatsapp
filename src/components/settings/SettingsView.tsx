@@ -499,6 +499,16 @@ export const SettingsView = () => {
                 })}
                 {connected.isTestAccount === true ? ` · ${t('chat.testAccount')}` : ''}
               </div>
+              {/*
+                `statusDetail` is where the probe puts the sentence explaining a
+                status, and until now nothing rendered it — so the one field
+                written to say *why* a number is in the state it is in went
+                straight to the database and stopped there. It is how a number
+                that is connected but not registered for Cloud API says so.
+              */}
+              {typeof connected.statusDetail === 'string' && connected.statusDetail !== '' ? (
+                <Banner tone="danger">{connected.statusDetail}</Banner>
+              ) : null}
               <Copyable
                 label="phone_number_id"
                 value={connected.phoneNumberId ?? null}

@@ -355,7 +355,7 @@ export const createCloudApiProvider = (): WhatsAppProvider => ({
       path: phoneNumberId,
       query: {
         fields:
-          'display_phone_number,verified_name,quality_rating,messaging_limit_tier,throughput',
+          'display_phone_number,verified_name,quality_rating,messaging_limit_tier,throughput,platform_type,code_verification_status',
       },
     })) as Record<string, unknown> | null;
 
@@ -366,6 +366,8 @@ export const createCloudApiProvider = (): WhatsAppProvider => ({
       qualityRating: asString(body?.quality_rating),
       messagingLimitTier: asString(body?.messaging_limit_tier),
       throughputLevel: asString((body?.throughput as { level?: unknown } | undefined)?.level),
+      platformType: asString(body?.platform_type),
+      codeVerificationStatus: asString(body?.code_verification_status),
     };
   },
 
