@@ -288,6 +288,7 @@ export default defineLogicFunction({
   timeoutSeconds: 15,
   serverRouteTriggerSettings: {
     forwardedRequestHeaders: [META_SIGNATURE_HEADER],
+    httpMethods: ['GET', 'POST'],
   },
   handler,
 });

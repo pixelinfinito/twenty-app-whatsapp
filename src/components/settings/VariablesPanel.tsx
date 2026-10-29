@@ -91,7 +91,7 @@ export const SECTIONS = [
   { key: 'media', prefixes: ['WA_MEDIA_'] },
   { key: 'retention', prefixes: ['WA_RETENTION_', 'WA_TIMELINE_'] },
   { key: 'billing', prefixes: ['WA_RATE_'] },
-  { key: 'interface', prefixes: ['WA_POLL_INTERVAL_'] },
+  { key: 'interface', prefixes: ['WA_POLL_INTERVAL_', 'WA_TIME_ZONE'] },
   { key: 'access', prefixes: ['WA_ALLOW_'] },
   { key: 'other', prefixes: [] },
 ] as const;

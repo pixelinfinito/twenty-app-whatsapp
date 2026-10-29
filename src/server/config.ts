@@ -11,6 +11,8 @@
  * to a documented default rather than producing `NaN` two layers downstream.
  */
 
+import { DEFAULT_TIME_ZONE, resolveTimeZone } from '../domain/time-zone';
+
 const raw = (name: string): string | undefined => {
   const value = process.env[name];
 
@@ -70,6 +72,7 @@ export const listVar = (name: string, fallback: string[]): string[] => {
  */
 export const DEFAULTS = {
   defaultCountryCallingCode: '+244',
+  timeZone: DEFAULT_TIME_ZONE,
   sendThrottlePerSecond: 20,
   interactiveLaneShare: 0.4,
   recipientMinSpacingMs: 250,
@@ -161,6 +164,14 @@ export const config = {
     Math.max(7, intVar('WA_RETENTION_WEBHOOK_EVENT_DAYS', DEFAULTS.retentionWebhookEventDays)),
   retentionMessageMonths: () =>
     intVar('WA_RETENTION_MESSAGE_MONTHS', DEFAULTS.retentionMessageMonths),
+  /**
+   * The zone every rendered date and every day boundary uses.
+   *
+   * Validated through the domain rule rather than passed straight to `Intl`: a
+   * typo here is not a wrong hour but a `RangeError` on every format, and this
+   * value reaches the recipient's message through `now.date`.
+   */
+  timeZone: () => resolveTimeZone(stringVar('WA_TIME_ZONE', DEFAULTS.timeZone)),
   timelineMode: () => stringVar('WA_TIMELINE_MODE', DEFAULTS.timelineMode).toUpperCase(),
   /**
    * Off by default, and that is a product decision rather than caution: a read

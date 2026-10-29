@@ -28,17 +28,17 @@ Developed by **Marcos Lisboa** at [Pixel Infinito](https://pixel.ao) · publishe
 
 **Everything WhatsApp sends, handled.** Text, images, audio, video, documents, stickers, locations, contact cards, reactions and replies all render; anything Meta invents next is stored and shown as an unsupported message rather than dropped.
 
-The interface ships in **English and Portuguese**, following each user's locale.
+The interface ships in **English, Portuguese and Spanish**, following each user's locale.
 
 ## Requirements
 
-- A Twenty workspace (cloud or self-hosted) whose public URL is reachable over HTTPS — Meta must be able to call your webhook.
+- A Twenty **2.35.0 or newer (2.x)** workspace (cloud or self-hosted) whose public URL is reachable over HTTPS — Meta must be able to call your webhook.
 - A Meta Business account with an approved **WhatsApp Business phone number**.
 - A Meta app with the WhatsApp product and a system-user access token.
 
 ## Installation
 
-Install from **Settings → Apps** in your Twenty workspace, then work through the steps below **in order**. The order matters: you cannot test the proxy alias before the route exists, and the route does not exist before the app is claimed.
+Install from **Settings → Apps** in your Twenty workspace, then work through the steps below **in order**. The order matters: you cannot test the callback before the route exists, and the route does not exist before the app is claimed.
 
 ### The three silent failures, first
 
@@ -99,75 +99,58 @@ All four are required. The resolver fails closed on a missing `META_APP_SECRET` 
 
 ### 6. Configure the webhook in Meta
 
-Meta takes **one** callback URL and uses it for two things: a `GET` carrying `hub.challenge` to verify the endpoint, and `POST` to deliver events. Twenty answers those on two different paths:
-
-| | Path | Answered by |
-| --- | --- | --- |
-| `GET` verification | `<base>/s/whatsapp/verify` | `wa-webhook-verify` |
-| `POST` events | `<base>/webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd` | `wa-webhook-resolver` |
-
-So add a one-line alias to the reverse proxy in front of Twenty that method-splits a single public path. **Caddy:**
-
-```caddy
-example.com {
-    @wa_verify { path /whatsapp/webhook
-                 method GET }
-    @wa_events { path /whatsapp/webhook
-                 method POST }
-
-    handle @wa_verify {
-        rewrite * /s/whatsapp/verify?{query}
-        reverse_proxy twenty:3000
-    }
-    handle @wa_events {
-        rewrite * /webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd
-        reverse_proxy twenty:3000
-    }
-    handle { reverse_proxy twenty:3000 }
-}
-```
-
-**Nginx:**
-
-```nginx
-location = /whatsapp/webhook {
-    if ($request_method = GET)  { rewrite ^ /s/whatsapp/verify?$args last; }
-    if ($request_method = POST) { rewrite ^ /webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd last; }
-    return 405;
-}
-```
-
-**Cloudflare** (no origin config needed — two URL Rewrite Transform Rules, under **Rules → Overview → Create rule → URL Rewrite Rule**). Your DNS record must be proxied:
+Meta takes **one** callback URL and uses it for two things: a `GET` carrying `hub.challenge` to verify the endpoint, and `POST` to deliver events. This app answers **both** on one URL — the webhook resolver's server route:
 
 ```
-Rule 1 — verification
-  (http.host eq "crm.example.com" and http.request.uri.path eq "/whatsapp/webhook"
-   and http.request.method eq "GET")
-  Path → Static → /s/whatsapp/verify        Query → leave unchanged
-
-Rule 2 — events
-  (http.host eq "crm.example.com" and http.request.uri.path eq "/whatsapp/webhook"
-   and http.request.method eq "POST")
-  Path → Static → /webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd
+<your Twenty base URL>/webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd
 ```
 
-Rewrite only the path in both, so `hub.mode` / `hub.challenge` / `hub.verify_token` survive on the `GET`. The two are mutually exclusive by method, so order does not matter. In the expression builder `http.request.method` appears as **Request Method**.
+Open **Webhooks** in the Meta app's WhatsApp product and paste that URL as the callback. The app's settings health panel prints it ready to copy, alongside the verify token fields.
 
-> **Turn off bot protection for this host.** Cloudflare's **AI Labyrinth** and **Bot Fight Mode** classify Meta's webhook deliveries as crawler traffic and serve them decoy content, so they never reach Twenty. This is the worst failure mode in the whole setup, because it leaves *no trace on your server at all*: verification passes, the route answers every manual test correctly, and real deliveries vanish with nothing in any log. The only evidence is in **Cloudflare → Security → Events**, where the deliveries appear as `AI Labyrinth Served`.
+You can sanity-check the endpoint yourself with
+`curl "<base>/webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd?hub.mode=subscribe&hub.challenge=probe&hub.verify_token=<your token>"` —
+it must return `probe`. A wrong token returns `Forbidden`, a Twenty without server-route GET support returns HTML.
+
+> **For older app releases running on Twenty older than 2.35.0** (this release requires Twenty 2.35.0 or newer), server routes answer `POST` only, and the `GET` half needs one method-splitting alias in your own reverse proxy: `GET` → `<base>/s/whatsapp/verify`, `POST` → the server-route URL above. **Caddy:**
 >
-> Turn both off under **Security → Settings → Bot traffic**, or add a WAF custom rule on `/whatsapp/webhook` with the **Skip** action and every bot option selected. On a CRM host there is no content for an AI crawler to scrape, so the protection costs more than it earns.
-
-Do **not** let the proxy buffer, re-encode or otherwise rewrite the request body: the HMAC is computed over the exact bytes Meta sent, and any normalisation invalidates every signature.
-
-Then open **Webhooks** in the Meta app's WhatsApp product, set the callback to `<your base URL>/whatsapp/webhook`, paste the same verify token, and click **Verify and save**.
-
-> **Can you skip the proxy?** Only if your Twenty version routes `GET` to server routes. It does not on 2.31.x — verified on 2.31.1 and 2.31.6, where the `GET` returns the front-end shell instead of the challenge. Check yours with
-> `curl "<base>/webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd?hub.mode=subscribe&hub.challenge=probe&hub.verify_token=<your token>"`.
-> If it returns `probe`, point Meta straight there. If it returns HTML, you need the alias.
+> ```caddy
+> example.com {
+>     @wa_verify { path /whatsapp/webhook
+>                  method GET }
+>     @wa_events { path /whatsapp/webhook
+>                  method POST }
+>
+>     handle @wa_verify {
+>         rewrite * /s/whatsapp/verify?{query}
+>         reverse_proxy twenty:3000
+>     }
+>     handle @wa_events {
+>         rewrite * /webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd
+>         reverse_proxy twenty:3000
+>     }
+>     handle { reverse_proxy twenty:3000 }
+> }
+> ```
+>
+> **Nginx:**
+>
+> ```nginx
+> location = /whatsapp/webhook {
+>     if ($request_method = GET)  { rewrite ^ /s/whatsapp/verify?$args last; }
+>     if ($request_method = POST) { rewrite ^ /webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd last; }
+>     return 405;
+> }
+> ```
+>
+> Do **not** let the proxy buffer, re-encode or otherwise rewrite the request body: the HMAC is computed over the exact bytes Meta sent, and any normalisation invalidates every signature. Then paste `<base>/whatsapp/webhook` as the callback instead.
 
 ### 7. Subscribe the webhook fields
 
 Subscribe all seven: `messages`, `message_template_status_update`, `message_template_quality_update`, `message_template_components_update`, `account_update`, `phone_number_quality_update`, `business_capability_update`.
+
+> Meta's **"Send to my server"** button reports success without looking at the status code — a green test there is not proof of delivery. Confirm delivery by watching for new rows in `whatsappWebhookEvent` (or the health panel's webhook row), not by that button.
+
+The app's **health panel** shows the callback URLs and the required fields for your workspace, and verifies each piece of the setup once a number is connected.
 
 Without `message_template_status_update`, template approvals never arrive.
 
@@ -186,7 +169,7 @@ Seeing `unverified webhook`, `signature failed`, or no events?
 - **Nothing in the logs at all?** If a real delivery leaves no trace — no `signature_rejected`, no `unclaimed`, no row — then it never reached your server, and the cause is in front of it. On Cloudflare, check **Security → Events** for `AI Labyrinth Served` or a bot challenge on `/whatsapp/webhook` (see step 6). Silence in your own logs is evidence about the edge, not about the app.
 - **Start with the Webhook route (POST) row in the health panel.** It probes the route directly and names the cause — see the table at the top of Installation for what each status means. This is the single most likely explanation of "verification passed but no events ever arrive".
 - **Is your number connected?** An unclaimed number's delivery is accepted and discarded with no row (step 8). Test with a connected number or you cannot tell success from failure.
-- Confirm the proxy alias from step 6 exists in *both* directions. A callback that verifies but delivers nothing is the classic symptom of a `GET` rule without its `POST` counterpart — the `POST` then 404s somewhere you will only see in the proxy log.
+- Paste the exact server-route URL from step 6. A callback URL that verifies but delivers nothing is the classic symptom of a hand-typed URL — Meta's "Send to my server" test hits a 404 and still shows you a green tick.
 - Re-copy the callback URL and verify token into Meta from the latest save.
 - Confirm the endpoint is reachable over HTTPS and not behind an IP/VPC block.
 - Confirm all webhook fields above are subscribed.
@@ -196,7 +179,7 @@ The health panel diagnoses each of these individually.
 
 ## Configuration
 
-Beyond the Meta secrets, the app exposes ~30 application variables so operational behavior never requires a deploy — send throttles and pacing, campaign batch sizes and failure thresholds, opt-in/opt-out keywords and confirmation wording (English and Portuguese), retention windows, timeline verbosity, per-category pricing for cost estimates, and more. Each variable is documented in place under **Settings → Apps → WhatsApp**.
+Beyond the Meta secrets, the app exposes ~30 application variables so operational behavior never requires a deploy — send throttles and pacing, campaign batch sizes and failure thresholds, opt-in/opt-out keywords and confirmation wording (English and Portuguese), the rendered time zone (`WA_TIME_ZONE`), retention windows, timeline verbosity, per-category pricing for cost estimates, and more. Each variable is documented in place under **Settings → Apps → WhatsApp**.
 
 Per-number settings (throttle, default calling code, auto-assignment, contact auto-creation) live on the WhatsApp account record, so numbers can differ.
 
