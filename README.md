@@ -32,13 +32,13 @@ The interface ships in **English, Portuguese and Spanish**, following each user'
 
 ## Requirements
 
-- A Twenty workspace (cloud or self-hosted) whose public URL is reachable over HTTPS — Meta must be able to call your webhook.
+- A Twenty **2.35.0 or newer (2.x)** workspace (cloud or self-hosted) whose public URL is reachable over HTTPS — Meta must be able to call your webhook.
 - A Meta Business account with an approved **WhatsApp Business phone number**.
 - A Meta app with the WhatsApp product and a system-user access token.
 
 ## Installation
 
-Install from **Settings → Apps** in your Twenty workspace, then work through the steps below **in order**. The order matters: you cannot test the proxy alias before the route exists, and the route does not exist before the app is claimed.
+Install from **Settings → Apps** in your Twenty workspace, then work through the steps below **in order**. The order matters: you cannot test the callback before the route exists, and the route does not exist before the app is claimed.
 
 ### The three silent failures, first
 
