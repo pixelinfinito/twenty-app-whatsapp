@@ -72,6 +72,7 @@ jobs:
           yarn twenty remote:add --url "$TWENTY_API_URL" --api-key "$TWENTY_API_KEY"
           yarn twenty apply . --force
         env:
+          NODE_OPTIONS: --import=${{ github.workspace }}/.github/scripts/pace-app-uploads.mjs
           TWENTY_API_URL: ${{ steps.twenty.outputs.server-url }}
           TWENTY_API_KEY: ${{ steps.twenty.outputs.api-key }}
 
