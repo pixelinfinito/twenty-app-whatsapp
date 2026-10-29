@@ -113,7 +113,9 @@ export const partitionEntriesByWorkspace = async (
    * Without these, `unclaimed` reports only a count — and a count cannot be
    * acted on. The operator can see the number they connected and the number
    * Meta says it delivered for, but not that the two disagree, which is the
-   * only thing that matters and the only thing the count hides.
+   * only thing that matters and the only thing the count hides. Diagnosed on a
+   * live install where every other signal was green and the delivery still
+   * went nowhere.
    *
    * The ids are safe to log: they are business identifiers Meta prints in its
    * own dashboard, and `wa.account.claim_conflict` already logs both.
@@ -122,12 +124,11 @@ export const partitionEntriesByWorkspace = async (
 }> => {
   const cache = new Map<string, string | null>();
   const groups = new Map<string, MetaEntry[]>();
-  let unclaimedEntries = 0;
   const unclaimedKeys = new Set<string>();
+  let unclaimedEntries = 0;
 
   for (const entry of body.entry ?? []) {
     let workspaceId: string | null = null;
-
     const tried = entryRoutingKeys(entry);
 
     for (const key of tried) {
@@ -287,13 +288,6 @@ export default defineLogicFunction({
   timeoutSeconds: 15,
   serverRouteTriggerSettings: {
     forwardedRequestHeaders: [META_SIGNATURE_HEADER],
-    /**
-     * The platform answers a server route with POST only by default. Declaring
-     * both methods is what makes the one URL Meta asks for — the GET handshake
-     * and the POST delivery below — the same one, with no reverse-proxy alias
-     * in front of Twenty. Supported since Twenty 2.35.0 (upstream #24401),
-     * which is this app's minimum server.
-     */
     httpMethods: ['GET', 'POST'],
   },
   handler,

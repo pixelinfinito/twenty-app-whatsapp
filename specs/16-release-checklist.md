@@ -33,10 +33,10 @@ Record the versions before you start — the answers only mean something attache
 
 ## Part 0 — Cut the release (engineering)
 
-The version anyone can install must be the version anyone can read. 0.1.2 was published to npm
-from a commit that is not on any branch, with no tag, and its full source is not recoverable —
-the tarball ships only the logic-function entries, with everything else bundled. Nothing below
-can bring that source back; what follows exists so it cannot happen again.
+The version anyone can install must be the version anyone can read. The 0.1.2 source was
+initially missing from the remote; it is now available at `17d18ccb4d7eca18c2db7daa88ca46c3d1383c0a`,
+which matches npm's recorded `gitHead`. Push the release commit before publishing, and tag that
+exact commit so downstream users can vendor its full source and tests.
 
 | # | Step | Expected | Pass |
 |---|---|---|---|

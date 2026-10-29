@@ -2751,10 +2751,73 @@ const COPY = {
    * alias is only a fallback for a Twenty that does not route GET to server
    * routes.
    */
+  /**
+   * The seven steps, in the order they must happen, each named after the
+   * failure it prevents.
+   *
+   * They exist because every one of them was found the hard way on a real
+   * install (issue #1 and the 0.1.1 rollout): each has a distinct status code,
+   * none of them is guessable, and the first three produce a webhook that is
+   * *configured correctly in Meta* and still delivers nothing. An operator who
+   * reads only the callback URL gets none of this.
+   */
+  'settings.callbackSteps': { pt: 'Configuração, por ordem', en: 'Setup, in order', es: 'Configuración, en orden' },
+  'settings.callbackStep1': {
+    pt: '1. Reclame a aplicação. Em Definições → Aplicações → esta app → Zona de perigo, clique em “Reclamar propriedade”. A rota POST é uma rota de servidor e corre na área de trabalho dona da aplicação: sem dona, não existe (404).',
+    en: '1. Claim the app. In Settings → Applications → this app → Danger zone, click “Claim ownership”. The POST route is a server route and runs in the app-owner workspace: with no owner it does not exist (404).',
+    es: '1. Reclama la aplicación. En Configuración → Aplicaciones → esta app → Zona de peligro, haz clic en “Reclamar propiedad”. La ruta del servidor se ejecuta en el espacio de trabajo propietario: sin propietario, no existe (404).',
+  },
+  'settings.callbackStep2': {
+    pt: '2. Ligue as funções lógicas no servidor. Defina LOGIC_FUNCTION_TYPE=LOCAL (ou LAMBDA) no ambiente do servidor Twenty e reinicie. Sem isto nada nesta app corre — nem rotas, nem tarefas agendadas (403).',
+    en: '2. Enable logic functions on the server. Set LOGIC_FUNCTION_TYPE=LOCAL (or LAMBDA) in the Twenty server environment and restart. Without it nothing in this app runs — not routes, not scheduled jobs (403).',
+    es: '2. Activa las funciones lógicas del servidor. Configura LOGIC_FUNCTION_TYPE=LOCAL (o LAMBDA) en el entorno del servidor Twenty y reinícialo. Sin esto no funcionan las rutas ni las tareas programadas (403).',
+  },
+  'settings.callbackStep3': {
+    pt: '3. Defina as quatro variáveis META_* no separador Variáveis. O resolvedor falha fechado sem elas: recusa-se a verificar assinaturas contra uma chave vazia (500).',
+    en: '3. Set the four META_* variables in the Variables tab. The resolver fails closed without them: it refuses to verify signatures against an empty key (500).',
+    es: '3. Configura las cuatro variables META_* en la pestaña Variables. El resolvedor rechaza las solicitudes si falta el secreto de firma (500).',
+  },
+  'settings.callbackStep4': {
+    pt: '4. Use o URL do callback directo em baixo. Responde à verificação GET e aos eventos POST, sem alias no proxy em Twenty 2.35.0 ou posterior.',
+    en: '4. Use the direct callback URL below. It answers GET verification and POST events without a proxy alias on Twenty 2.35.0 or newer.',
+    es: '4. Usa la URL de callback directa de abajo. Responde tanto a la verificación GET como a los eventos POST; no requiere un alias de proxy en Twenty 2.35.0 o posterior.',
+  },
+  /**
+   * The failure with no trace, and the reason it gets its own step: bot
+   * protection at the edge swallows the delivery before the server sees it, so
+   * every log here stays empty and every manual test passes. Diagnosed on a
+   * live install where Cloudflare's AI Labyrinth was serving Meta decoy pages.
+   */
+  'settings.callbackStep5': {
+    pt: '5. Desligue a protecção contra bots neste anfitrião. O AI Labyrinth e o Bot Fight Mode da Cloudflare tratam as entregas da Meta como tráfego de robôs e servem-lhes conteúdo falso — não chega nada ao servidor e não fica registo nenhum. Veja Segurança → Eventos, à procura de “AI Labyrinth Served”.',
+    en: '5. Turn off bot protection for this host. Cloudflare’s AI Labyrinth and Bot Fight Mode treat Meta’s deliveries as crawler traffic and serve them decoy content — nothing reaches the server and nothing is logged anywhere. Check Security → Events for “AI Labyrinth Served”.',
+    es: '5. Comprueba que la protección contra bots permita las entregas de Meta. Si no llega nada al servidor, revisa Seguridad → Eventos en Cloudflare para detectar bloqueos o desafíos.',
+  },
+  'settings.callbackStep6': {
+    pt: '6. Na Meta → WhatsApp → Configuração → Webhooks, cole o URL do callback directo em baixo e o seu META_VERIFY_TOKEN, e clique em Verificar e guardar.',
+    en: '6. In Meta → WhatsApp → Configuration → Webhooks, paste the direct Callback URL below and your META_VERIFY_TOKEN, then click Verify and save.',
+    es: '6. En Meta → WhatsApp → Configuración → Webhooks, pega la URL de callback directa de abajo y tu META_VERIFY_TOKEN. Haz clic en Verificar y guardar.',
+  },
+  'settings.callbackStep7': {
+    pt: '7. Subscreva todos os campos listados em baixo. Sem message_template_status_update, as aprovações de modelos nunca chegam.',
+    en: '7. Subscribe every field listed below. Without message_template_status_update, template approvals never arrive.',
+    es: '7. Suscribe todos los campos de abajo. Sin message_template_status_update nunca llegan las aprobaciones de plantillas.',
+  },
+  /**
+   * The step that explains an empty table. Meta's sample payload carries a
+   * phone_number_id nobody owns, so the resolver answers 200 and discards it —
+   * correctly, since a non-2xx would earn a week of retries for a number we do
+   * not host. Without this sentence that reads exactly like a broken webhook.
+   */
+  'settings.callbackStep8': {
+    pt: '8. Ligue primeiro o seu número, depois teste. O “Send to my server” da Meta usa um número de exemplo que ninguém reclamou: é aceite (200) e descartado, sem deixar linha nenhuma. Só depois de ligar o seu número é que um teste aparece no Diagnóstico.',
+    en: '8. Connect your number first, then test. Meta’s “Send to my server” uses a sample number nobody has claimed: it is accepted (200) and discarded, leaving no row at all. Only once your number is connected does a test show up in Diagnostics.',
+    es: '8. Conecta tu número y prueba con una entrega dirigida a ese número. Una muestra de Meta con un número no reclamado se acepta (200) y descarta sin crear filas. Confirma la entrega en Diagnóstico.',
+  },
   'settings.callbackDirectNote': {
-    pt: 'A Meta usa um só URL para o GET de verificação e para os POST de eventos. Cole acima a forma directa — responde a ambos. O alias no proxy e o URL de verificação são alternativas legadas para versões do Twenty que não encaminham GET para rotas de servidor.',
-    en: 'Meta uses a single URL for both the GET verification and the POST events. Paste the direct form above — it answers both. The proxy alias and the verification URL are legacy alternatives for Twenty versions that do not route GET to server routes.',
-    es: 'Meta usa una sola URL para la verificación GET y para los eventos POST. Pega arriba la forma directa: responde a ambas. El alias de proxy y la URL de verificación son alternativas heredadas para versiones de Twenty que no enrutan GET a rutas de servidor.',
+    pt: 'A Meta usa um só URL para o GET de verificação e para os POST de eventos. Use o URL do callback directo em baixo — responde a ambos. O alias no proxy e o URL de verificação são alternativas legadas para versões do Twenty que não encaminham GET para rotas de servidor.',
+    en: 'Meta uses a single URL for both the GET verification and the POST events. Use the direct callback URL below — it answers both. The proxy alias and the verification URL are legacy alternatives for Twenty versions that do not route GET to server routes.',
+    es: 'Meta usa una sola URL para la verificación GET y para los eventos POST. Usa la URL de callback directa de abajo: responde a ambas. El alias de proxy y la URL de verificación son alternativas heredadas para versiones de Twenty que no enrutan GET a rutas de servidor.',
   },
   /**
    * Shown only when the server's own address is local. The path is
@@ -2932,6 +2995,61 @@ const COPY = {
     pt: 'Mensagens que não chegaram ao destinatário. O motivo de cada uma está no separador Diagnóstico.',
     en: 'Messages that never reached the recipient. Each one’s reason is in the Diagnostics tab.',
     es: 'Mensajes que nunca llegaron al destinatario. El motivo de cada uno está en la pestaña de Diagnóstico.',
+  },
+  'settings.health.webhookRoute': {
+    pt: 'Rota do webhook (POST)',
+    en: 'Webhook route (POST)',
+    es: "Ruta del webhook (POST)",
+  },
+  /**
+   * The remedy names the claim, because that is the cause in every case seen
+   * so far and it is not a step anyone would guess: the app installs, the
+   * functions register, and only the server route silently has nowhere to run.
+   */
+  'settings.health.webhookRoute.remedy': {
+    pt: 'O servidor não tem esta rota. Quase sempre é o registo da aplicação por reclamar: em Definições → Aplicações, reclame a propriedade da app. Uma rota de servidor corre na área de trabalho dona da aplicação e, sem dona, não existe.',
+    en: 'The server has no such route. Almost always the application registration is unclaimed: in Settings → Applications, claim ownership of the app. A server route runs in the app-owner workspace, and without an owner it does not exist.',
+    es: "El servidor no tiene esta ruta. En Configuración → Aplicaciones, reclama la propiedad de la app. La ruta del servidor necesita un espacio de trabajo propietario para ejecutarse.",
+  },
+  'settings.health.detail.webhookRouteLive': {
+    pt: 'A rota responde e a assinatura foi aceite.',
+    en: 'The route answers and the signature was accepted.',
+    es: "La ruta responde y la firma fue aceptada.",
+  },
+  'settings.health.detail.webhookRouteLiveUnsigned': {
+    pt: 'A rota responde. Defina META_APP_SECRET para confirmar também a assinatura.',
+    en: 'The route answers. Set META_APP_SECRET to confirm the signature too.',
+    es: "La ruta responde. Configura META_APP_SECRET para comprobar también la firma.",
+  },
+  'settings.health.detail.webhookRouteMissing': {
+    pt: 'O servidor respondeu 404 — não existe rota de servidor para esta app.',
+    en: 'The server answered 404 — there is no server route for this app.',
+    es: "El servidor respondió 404: no existe una ruta de servidor para esta app.",
+  },
+  'settings.health.detail.webhookRouteDisabled': {
+    pt: 'O servidor recusa executar funções lógicas — nada nesta app funciona. Defina LOGIC_FUNCTION_TYPE=LOCAL (ou LAMBDA) no ambiente do servidor Twenty e reinicie.',
+    en: 'The server refuses to run logic functions — nothing in this app works. Set LOGIC_FUNCTION_TYPE=LOCAL (or LAMBDA) in the Twenty server environment and restart.',
+    es: "El servidor no permite ejecutar funciones lógicas. Configura LOGIC_FUNCTION_TYPE=LOCAL (o LAMBDA) en su entorno y reinícialo.",
+  },
+  'settings.health.detail.webhookRouteSecret': {
+    pt: 'A rota recusou uma assinatura gerada por esta app: META_APP_SECRET não corresponde ao segredo da app na Meta.',
+    en: 'The route rejected a signature this app generated: META_APP_SECRET does not match the app secret in Meta.',
+    es: "La ruta rechazó una firma generada por esta app. Comprueba que META_APP_SECRET coincida en los entornos que ejecutan el diagnóstico y el resolvedor.",
+  },
+  'settings.health.detail.webhookRouteErrored': {
+    pt: 'A rota existe mas rebentou ({status}). Num arranque novo é quase sempre META_APP_SECRET por definir — o resolvedor recusa-se a verificar assinaturas com uma chave vazia. Veja os registos da função.',
+    en: 'The route exists but threw ({status}). On a fresh install this is almost always META_APP_SECRET being unset — the resolver refuses to verify signatures against an empty key. Check the function logs.',
+    es: "La ruta existe, pero falló ({status}). En una instalación nueva, comprueba que META_APP_SECRET esté configurado. Revisa los registros de la función.",
+  },
+  'settings.health.detail.webhookRouteUnreachable': {
+    pt: 'Não foi possível contactar a rota a partir do servidor.',
+    en: 'The route could not be reached from the server.',
+    es: "No se pudo acceder a la ruta desde el servidor.",
+  },
+  'settings.health.detail.webhookRouteUnknown': {
+    pt: 'A rota respondeu {status}, que não sabemos ler.',
+    en: 'The route answered {status}, which we have no reading for.',
+    es: "La ruta respondió {status}, un estado que no reconocemos.",
   },
   'settings.health.consentWording': {
     pt: 'Textos de consentimento',

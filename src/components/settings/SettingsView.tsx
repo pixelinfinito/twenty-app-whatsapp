@@ -60,6 +60,7 @@ type Diagnostics = {
  */
 const HEALTH_KEYS = [
   'token',
+  'webhookRoute',
   'webhook',
   'quality',
   'tier',
@@ -67,6 +68,23 @@ const HEALTH_KEYS = [
   'stuckOutbound',
   'failedOutbound',
   'consentWording',
+] as const;
+
+/**
+ * The callback setup steps, in the only order that works.
+ *
+ * A list rather than seven inline `t(...)` calls so the order lives in one
+ * place and the copy catalog stays the only place the wording lives.
+ */
+const CALLBACK_STEPS = [
+  'settings.callbackStep1',
+  'settings.callbackStep2',
+  'settings.callbackStep3',
+  'settings.callbackStep4',
+  'settings.callbackStep5',
+  'settings.callbackStep6',
+  'settings.callbackStep7',
+  'settings.callbackStep8',
 ] as const;
 
 /**
@@ -492,6 +510,16 @@ export const SettingsView = () => {
                 })}
                 {connected.isTestAccount === true ? ` · ${t('chat.testAccount')}` : ''}
               </div>
+              {/*
+                `statusDetail` is where the probe puts the sentence explaining a
+                status, and until now nothing rendered it — so the one field
+                written to say *why* a number is in the state it is in went
+                straight to the database and stopped there. It is how a number
+                that is connected but not registered for Cloud API says so.
+              */}
+              {typeof connected.statusDetail === 'string' && connected.statusDetail !== '' ? (
+                <Banner tone="danger">{connected.statusDetail}</Banner>
+              ) : null}
               <Copyable
                 label="phone_number_id"
                 value={connected.phoneNumberId ?? null}
@@ -730,6 +758,49 @@ export const SettingsView = () => {
               to server routes.
             */}
             <Banner>{t('settings.callbackDirectNote')}</Banner>
+            {/*
+              The seven steps, in the order they must happen.
+
+              Three of them (claim, LOGIC_FUNCTION_TYPE, the META_* variables)
+              produce a webhook that is configured perfectly in Meta and still
+              delivers nothing, each with its own status code and none of them
+              guessable. They are numbered rather than prose because the order
+              is load-bearing: the proxy alias cannot be tested before the
+              route exists, and the route does not exist before the claim.
+
+              Rendered as a real <ol> so screen readers announce the count and
+              position — "step 3 of 7" is the part that tells someone how much
+              is left.
+            */}
+            <details>
+              <summary
+                style={{
+                  cursor: 'pointer',
+                  fontSize: theme.font.size.md,
+                  fontWeight: theme.font.weight.semiBold,
+                  color: theme.font.color.primary,
+                }}
+              >
+                {t('settings.callbackSteps')}
+              </summary>
+              <ol
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: theme.spacing[2],
+                  margin: `${theme.spacing[2]} 0 0`,
+                  padding: 0,
+                  listStyle: 'none',
+                  fontSize: theme.font.size.md,
+                  color: theme.font.color.secondary,
+                  lineHeight: 1.5,
+                }}
+              >
+                {CALLBACK_STEPS.map((key) => (
+                  <li key={key}>{t(key)}</li>
+                ))}
+              </ol>
+            </details>
             {/*
               On local development these URLs answer only on this machine.
               Saying so beside them is the difference between an operator

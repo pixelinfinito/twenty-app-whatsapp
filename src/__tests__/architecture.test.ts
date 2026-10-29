@@ -135,7 +135,7 @@ describe('the Meta seam', () => {
   });
 
   /**
-   * Two exceptions, both narrow and both necessary:
+   * Three exceptions, all narrow and all necessary:
    *
    *  - `application-config.ts` *declares* the variables. Declaring a secret is
    *    not reading one.
@@ -143,8 +143,29 @@ describe('the Meta seam', () => {
    *    log line you must know what it looks like, so the redactor is the one
    *    module that has to see all of them — which is exactly why it is also the
    *    only module allowed to write to the console.
+   *  - `copy.ts` *names* one in a remedy sentence. "Set META_APP_SECRET" is
+   *    the entire value of that sentence — an operator told only that "the
+   *    signature was rejected" has to go looking for which of four variables
+   *    is wrong. Naming a variable is not reading it, and the test below holds
+   *    the catalog to that: it may say the name and may not read the value.
    */
-  const SECRET_READERS = ['application-config.ts', 'server/logger.ts'];
+  const SECRET_READERS = [
+    'application-config.ts',
+    'server/logger.ts',
+    'components/common/copy.ts',
+  ];
+
+  /**
+   * The licence granted to `copy.ts` above, bounded. It is a string table with
+   * no environment access, and it must stay one — the moment it reads
+   * `process.env` it stops being a catalog that mentions a secret and becomes
+   * a module that handles one.
+   */
+  it('keeps the copy catalog free of environment access', () => {
+    const source = contentsOf(join(SRC, 'components', 'common', 'copy.ts'));
+
+    expect(source).not.toMatch(/process\.env/);
+  });
 
   const withoutSecretReaders = productionOutsideProvider.filter(
     (file) => !SECRET_READERS.some((allowed) => file.endsWith(allowed)),

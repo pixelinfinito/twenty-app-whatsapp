@@ -22,6 +22,7 @@ import { config, parseCountryCallingCode } from '../server/config';
 import { describeError, logger } from '../server/logger';
 import { provisionNotificationWorkflow } from '../server/notification-workflow';
 import { budgetForAccount, tierFor } from '../server/tier-ledger';
+import { probeWebhookRoute } from '../server/webhook-route-probe';
 import { currentWorkspaceId } from '../server/workspace';
 import { consentWordingDrift } from './wa-consent-keyword';
 import { syncAccount } from './wa-template-sync';
@@ -376,6 +377,26 @@ const diagnostics = async () => {
       detail: { count: failedOutbound.length },
     },
     /**
+     * The one row that would have turned issue #1's install into a five-minute
+     * fix. Everything else can be green — app installed, functions registered,
+     * token valid — while the `POST` half of the webhook does not exist,
+     * because an unclaimed registration leaves a server route with no workspace
+     * to run in. Meta reports a delivery failure with no detail, and nothing on
+     * this page disagreed with it.
+     */
+    await (async () => {
+      const probe =
+        base === ''
+          ? { ok: false, state: 'unreachable' as const, status: null, signed: false }
+          : await probeWebhookRoute({ baseUrl: base });
+
+      return {
+        key: 'webhookRoute',
+        ok: probe.ok,
+        detail: { state: probe.state, status: probe.status, signed: probe.signed },
+      };
+    })(),
+    /**
      * Workspace-wide, not per-account: the wording and the keyword lists are
      * application variables, so the drift is the same for every number. It
      * belongs in the health panel because nothing else can catch it — a
@@ -472,6 +493,57 @@ const countOtherAccountsOnWaba = async (
   ).length;
 };
 
+/**
+ * Why this number cannot receive webhooks, or `null` when nothing is wrong.
+ *
+ * Two fields decide it, and **neither is visible in anything else the panel
+ * shows**. A number can answer `GET /{phone_number_id}` with a verified name,
+ * a GREEN quality rating and a messaging tier while being unable to produce a
+ * single event — every one of those fields is populated in the broken state.
+ * So the account went CONNECTED, the panel went green, messages arrived on the
+ * phone with two ticks, and no webhook ever fired.
+ *
+ * - `platform_type` must be `CLOUD_API`. Otherwise the number is in the WABA
+ *   but not on the API this app speaks to.
+ * - `code_verification_status` must be `VERIFIED`. `EXPIRED` is the one found
+ *   on a live install: Meta keeps delivering messages to the number and stops
+ *   emitting events for it, which is indistinguishable from a broken webhook
+ *   from every angle except this field.
+ *
+ * Reported, not thrown. The connection *is* real and the token *does* work —
+ * what is missing is a registration step at Meta, and saying which one beats a
+ * failure that reads like a bad credential.
+ */
+export const registrationFault = (number: {
+  platformType?: string | null;
+  codeVerificationStatus?: string | null;
+}): string | null => {
+  const platform = (number.platformType ?? '').toUpperCase();
+  const verification = (number.codeVerificationStatus ?? '').toUpperCase();
+
+  if (platform !== '' && platform !== 'CLOUD_API') {
+    return `platform_type is ${platform} — this number is not on the Cloud API, so no webhooks will arrive for it.`;
+  }
+
+  /**
+   * Worth surfacing, deliberately *not* worth asserting a cause for.
+   *
+   * Meta's own dashboard can show the number connected with high quality while
+   * this field reads `EXPIRED`, so a stale value here does not prove the
+   * number is broken — it may be a leftover of the verification-code flow on a
+   * number that registered successfully. What is certain is that nothing else
+   * in the product reveals it, and that a number missing webhook events with
+   * this field non-`VERIFIED` is worth re-verifying before hunting elsewhere.
+   *
+   * The wording says what the field is, not what it must mean.
+   */
+  if (verification !== '' && verification !== 'VERIFIED') {
+    return `code_verification_status is ${verification} rather than VERIFIED. Meta may still show this number as connected, and it does not on its own prove a fault — but if webhook events are not arriving, re-verifying the number in Meta (request a code, confirm it, then register it with its PIN) is worth ruling out first.`;
+  }
+
+  return null;
+};
+
 /** A live `GET /{phone_number_id}`, which is the only real proof of a connection. */
 const probeNumber = async (
   accountId: string,
@@ -482,7 +554,7 @@ const probeNumber = async (
 
     await patchAccount(accountId, {
       status: ACCOUNT_STATUS.CONNECTED,
-      statusDetail: null,
+      statusDetail: registrationFault(number),
       displayPhoneNumber: number.displayPhoneNumber,
       displayName: number.verifiedName,
       qualityRating: QUALITY_FROM_META[(number.qualityRating ?? '').toUpperCase()] ?? QUALITY.UNKNOWN,

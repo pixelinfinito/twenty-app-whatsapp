@@ -111,6 +111,23 @@ describe('describeHealth', () => {
     },
   );
 
+  /**
+   * 404 and 401 are the two statuses that matter and they mean opposite
+   * things, so each gets its own sentence rather than a shared line quoting
+   * the code back at the operator.
+   */
+  it.each([
+    [{ state: 'notRegistered', status: 404 }, 'The server answered 404 — there is no server route for this app.'],
+    [{ state: 'secretMismatch', status: 401 }, 'The route rejected a signature this app generated: META_APP_SECRET does not match the app secret in Meta.'],
+    [{ state: 'live', signed: true }, 'The route answers and the signature was accepted.'],
+    [{ state: 'live', signed: false }, 'The route answers. Set META_APP_SECRET to confirm the signature too.'],
+    [{ state: 'executionDisabled', status: 403 }, 'The server refuses to run logic functions — nothing in this app works. Set LOGIC_FUNCTION_TYPE=LOCAL (or LAMBDA) in the Twenty server environment and restart.'],
+    [{ state: 'errored', status: 500 }, 'The route exists but threw (500). On a fresh install this is almost always META_APP_SECRET being unset — the resolver refuses to verify signatures against an empty key. Check the function logs.'],
+    [{ state: 'unreachable', status: null }, 'The route could not be reached from the server.'],
+  ])('explains the webhook route state %p', (detail, expected) => {
+    expect(describeHealth('webhookRoute', detail, t, 'en', now)).toBe(expected);
+  });
+
   it('names the drifted consent keyword, not a count', () => {
     expect(
       describeHealth('consentWording', { count: 1, words: ['SAIR'] }, t, 'en', now),

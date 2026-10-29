@@ -96,6 +96,38 @@ export const describeHealth = (
     }
 
     /**
+     * Each state gets its own sentence rather than a shared one plus a status
+     * code. `404` and `401` are the two that matter and they mean entirely
+     * different things — a missing route versus a mismatched secret — so a
+     * line reading "the route answered 401" would leave the operator to do the
+     * interpreting this row exists to do for them.
+     */
+    case 'webhookRoute': {
+      switch (str(detail.state)) {
+        case 'live':
+          return detail.signed === true
+            ? t('settings.health.detail.webhookRouteLive')
+            : t('settings.health.detail.webhookRouteLiveUnsigned');
+        case 'notRegistered':
+          return t('settings.health.detail.webhookRouteMissing');
+        case 'executionDisabled':
+          return t('settings.health.detail.webhookRouteDisabled');
+        case 'secretMismatch':
+          return t('settings.health.detail.webhookRouteSecret');
+        case 'errored':
+          return t('settings.health.detail.webhookRouteErrored', {
+            status: num(detail.status) ?? '—',
+          });
+        case 'unreachable':
+          return t('settings.health.detail.webhookRouteUnreachable');
+        default:
+          return t('settings.health.detail.webhookRouteUnknown', {
+            status: num(detail.status) ?? '—',
+          });
+      }
+    }
+
+    /**
      * The words themselves, not the count. "2 problems" sends the operator
      * hunting through four variables; "No longer recognised: SAIR" is the
      * whole investigation, and the word is the thing they have to paste back

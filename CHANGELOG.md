@@ -2,6 +2,106 @@
 
 All notable changes to this application are documented in this file.
 
+## 0.1.2 — everything between Meta and the resolver
+
+0.1.1 fixed the callback URL. Installing it on a live 2.31.1 server then produced **five more
+ways for a correctly-configured webhook to deliver nothing**, each with its own status code and
+none of them visible from the product. Every item below was found that way, in the order an
+operator hits them, and the release is mostly about making each one say what it is.
+
+The shape they share: the Meta dashboard shows the webhook verified and active, the settings page
+shows the number connected, every health row is green — and messages vanish. What was missing was
+never the code path. It was a sentence naming which of five unrelated things was switched off.
+
+### Added — the `Webhook route (POST)` health row
+
+- **Probes the resolver directly and names what it finds.** It exists because the row above it can
+  be green while the `POST` half does not exist at all. Four readings, three of them found on a
+  live install: `404` the app registration is unclaimed, so its server route has no workspace to
+  run in; `403` the server refuses to run any logic function; `5xx` `META_APP_SECRET` is unset and
+  the resolver fails closed rather than verify against an empty key; `401` to a signature we
+  generated, meaning the secret does not match Meta's.
+- **The probe is signed**, which is what makes it free: a valid signature carries it past the HMAC
+  check to the resolver's `object` guard, which answers `200` without touching a record, a queue
+  or Meta. An unsigned probe would trip the signature-rejected metric — a security signal — on
+  every load of the settings page. Signing is also what makes `401` mean something specific.
+- Probing beats reading the registration's owner over the metadata API: ownership names the
+  *likeliest* cause without proving the route answers, and the probe keeps reporting when the
+  cause is one nobody has seen yet. Which is how `403` and `5xx` were found.
+
+### Added — the setup steps, in the app and the README
+
+- **An eight-step "Setup, in order" list on the callback card**, each step named after the failure
+  it prevents, because the order is load-bearing: the alias cannot be tested before the route
+  exists, and the route does not exist before the app is claimed.
+- **Two steps nobody would guess.** *Claim the app registration* — the control renders only on the
+  admin-panel route and an API key cannot perform it, as the mutation reads a user permission.
+  *Set `LOGIC_FUNCTION_TYPE`* — a **server** environment variable, not an app variable; without it
+  Twenty loads a driver that refuses every logic function.
+- **Turn off Cloudflare's AI Labyrinth and Bot Fight Mode for the host.** The worst of the five,
+  because it is the only one that leaves *no trace on the server at all*: bot protection classifies
+  Meta's deliveries as crawler traffic and serves them decoy content, so verification passes, every
+  manual probe returns the right status, and real deliveries evaporate with nothing in any log. The
+  only evidence is `AI Labyrinth Served` in Cloudflare's own Security → Events. Troubleshooting now
+  leads with the general form: **silence in these logs is evidence about the edge, not the app.**
+- **Connect the number before testing.** Meta's "Send to my server" sample carries a
+  `phone_number_id` nobody has claimed; the resolver answers `200` and discards it — correctly,
+  since a non-2xx would earn a week of retries for a number we do not host — leaving no row. Run
+  against an unconnected number, a working webhook and a broken one look identical.
+- The Cloudflare URL Rewrite rules are documented alongside Caddy and Nginx, and are now
+  field-tested rather than theoretical: **a real signed delivery verified through them**, which
+  settles the standing worry that a proxy might re-encode the body and invalidate every signature.
+
+### Fixed — `wa.webhook.unclaimed` reported a count and nothing else
+
+- **It now names the routing keys it tried.** A real message arrived, its signature verified, and
+  it was discarded as unclaimed while the settings page showed the number CONNECTED. The log said
+  `unclaimedEntries: 1`, which cannot distinguish "Meta is delivering for a different
+  `phone_number_id`" from "the claim never landed" — opposite problems with opposite fixes. The
+  keys are safe to log: Meta prints them in its own dashboard and `wa.account.claim_conflict`
+  already logs both.
+
+### Changed
+
+- The architecture rule keeping `META_APP_SECRET` inside the provider now admits
+  `components/common/copy.ts`, which *names* the variable in a remedy sentence — "Set
+  META_APP_SECRET" is the whole value of that sentence — bounded by a new test asserting the copy
+  catalog never reads `process.env`.
+- `specs/00` D-1 records **probe P-1 as answered**, after a year as an open question. `GET` is not
+  routed to server routes on 2.31.x, so the alias is required; and a `Response` body is returned
+  **verbatim**, not JSON-encoded, so the bare-challenge handshake is correct exactly as written and
+  must not be "fixed" into a JSON body.
+
+### Previously (unreleased notes folded into this release)
+
+- **A new `Webhook route (POST)` health row.** Found while installing 0.1.1 on a live 2.31.1
+  server: the app installed cleanly, all 47 logic functions registered, every health row was
+  green — and `POST /webhooks/server/{resolver}` answered `404 LOGIC_FUNCTION_NOT_FOUND`. The
+  cause is that `wa-webhook-resolver` is a **server route**, which runs in the app-owner
+  workspace; while the application registration is unclaimed there is no such workspace, so the
+  platform has nowhere to dispatch it. Nothing in the product said so, and Meta reports only an
+  undetailed delivery failure — the same dead end as the callback URL above, reached a different
+  way. The row probes the route directly and names the remedy (claim the registration in
+  Settings → Applications). README gains it as **step 0**.
+- **And the state one step past it.** With the registration claimed the route existed and answered
+  `403 LOGIC_FUNCTION_DISABLED` — the platform refusing to run *any* logic function because the
+  server has no `LOGIC_FUNCTION_TYPE`. Nothing in this app works in that state: not the routes, not
+  the cron jobs, not the settings page. The row names it and the remedy
+  (`LOGIC_FUNCTION_TYPE=LOCAL` or `LAMBDA` in the Twenty server environment). The resolver never
+  answers 403 itself, so the status is unambiguous.
+- The probe is **signed with the app secret**, which is what makes it free: a valid signature
+  carries it past the HMAC check to the resolver's `object` guard, which answers `200` without
+  touching a record, a queue or Meta. An unsigned probe would trip the signature-rejected metric —
+  a security signal — on every load of the settings page. Signing also makes `401` meaningful: it
+  can only be a `META_APP_SECRET` that does not match the one in Meta, which the row says outright.
+- Probing rather than reading the registration's owner over the metadata API is deliberate.
+  Ownership names the likeliest cause without proving the route answers; a request to the route
+  proves the thing that actually matters, and keeps working when the cause is one we have not seen.
+- The architecture rule that keeps `META_APP_SECRET` inside the provider now admits
+  `components/common/copy.ts`, which *names* the variable in a remedy sentence — "Set
+  META_APP_SECRET" is the whole value of that sentence — and is held to naming it by a new test
+  asserting the catalog never reads `process.env`.
+
 ## 0.1.1 — the callback URL nobody could use
 
 Four defects reported from a live 2.31.6 install ([#1]), all confirmed against the code.
@@ -59,7 +159,7 @@ Four defects reported from a live 2.31.6 install ([#1]), all confirmed against t
   `requiredServerVersionRange`) refuses an older server at install instead of failing at the
   handshake, and `.twenty-version` — the CI pin and `docker:start` default — moves to `v2.35.0`
   with it. The previous pin, `v2.31.1`, also had no `twenty-app-dev` image to run.
-- **The health panel, the post-install log and README step 4 all lead with the direct URL.** The
+- **The health panel, the post-install log and README step 6 all lead with the direct URL.** The
   method-splitting proxy alias moves to a clearly optional legacy fallback for a Twenty that does
   not route `GET` to server routes, and the README now also warns that Meta's "Send to my server"
   button reports success without looking at the status code — confirm delivery in
@@ -67,7 +167,7 @@ Four defects reported from a live 2.31.6 install ([#1]), all confirmed against t
 
 ### Added — Spanish ([#6])
 
-- The interface follows a Spanish workspace's locale: 587 entries translated alongside the
+- The interface follows a Spanish workspace's locale: All catalog entries translated alongside the
   Portuguese and English they sit between, `es-MX` formatting, and the compiler forcing every key
   to carry all three. Terminology follows Meta's console (tier, marketing, callback stay in
   English); the register is `tú` throughout.
