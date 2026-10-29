@@ -97,7 +97,7 @@ const SCAN_STEP_MS = 5 * 60_000;
 
 const boundaries = new Map<string, number>();
 
-const firstInstantOfCivilDay = (key: string, timeZone: string): number =>
+export const firstInstantOfCivilDay = (key: string, timeZone: string): number =>
   firstInstantOfCivilDayScanned(key, timeZone, 0);
 
 const firstInstantOfCivilDayScanned = (

@@ -1,4 +1,4 @@
-import { startOfCivilDay, startOfNextCivilDay } from '../civil-day';
+import { firstInstantOfCivilDay, nextCivilDayKey, startOfCivilDay, startOfNextCivilDay } from '../civil-day';
 import { DEFAULT_TIME_ZONE } from '../time-zone';
 
 /**
@@ -335,6 +335,17 @@ export const translateFilter = ({
        */
       case VIEW_FILTER_OPERAND.IS: {
         if (!valid) return `${where}: invalid date`;
+
+        // A date picker supplies a civil date, not UTC midnight. Parsing
+        // YYYY-MM-DD as an instant moves it to yesterday in western zones.
+        if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          if (parsed!.toISOString().slice(0, 10) !== value) return `${where}: invalid date`;
+
+          return wrap({
+            gte: new Date(firstInstantOfCivilDay(value, timeZone)).toISOString(),
+            lt: new Date(firstInstantOfCivilDay(nextCivilDayKey(value), timeZone)).toISOString(),
+          });
+        }
 
         return wrap({
           gte: startOfCivilDay(parsed!, timeZone).toISOString(),

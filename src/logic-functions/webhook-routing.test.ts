@@ -1,4 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHmac } from 'node:crypto';
+import type { RoutePayload } from 'twenty-sdk/logic-function';
+import type { MetaWebhookBody } from '../domain/webhook/types';
+import { LF_WEBHOOK_INGEST } from '../constants/universal-identifiers';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Its own file because it needs `kv` mocked at module level, and
@@ -6,7 +10,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  */
 const claims = new Map<string, string>();
 
-vi.mock('twenty-sdk/logic-function', () => ({
+vi.mock('twenty-sdk/logic-function', async (importOriginal) => ({
+  ...await importOriginal<typeof import('twenty-sdk/logic-function')>(),
   kv: {
     get: async (key: string) => claims.get(key) ?? null,
     set: async (key: string, value: string) => {
@@ -14,10 +19,9 @@ vi.mock('twenty-sdk/logic-function', () => ({
     },
     delete: async (key: string) => claims.delete(key),
   },
-  Response: class {},
 }));
 
-const { partitionEntriesByWorkspace } = await import('./wa-webhook-resolver');
+const { default: resolver, handler, partitionEntriesByWorkspace } = await import('./wa-webhook-resolver');
 
 const delivery = (wabaId: string, phoneNumberId: string) => ({
   entry: [
@@ -103,5 +107,57 @@ describe('partitionEntriesByWorkspace', () => {
 
     expect(result.unclaimedEntries).toBe(2);
     expect(result.unclaimedKeys).toEqual(['wa:phone-number:pn-x', 'wa:waba:waba-x']);
+  });
+});
+
+afterEach(() => vi.unstubAllEnvs());
+
+describe('single callback handler', () => {
+  const secret = 'test-only-signing-secret';
+  const token = 'test-only-verification-token';
+  const event = (overrides: Partial<RoutePayload<MetaWebhookBody>> = {}): RoutePayload<MetaWebhookBody> => ({
+    headers: {}, queryStringParameters: {}, pathParameters: {}, body: null,
+    isBase64Encoded: false, userWorkspaceId: null,
+    requestContext: { http: { method: 'POST', path: '/webhooks/server/test' } },
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    vi.stubEnv('META_VERIFY_TOKEN', token);
+    vi.stubEnv('META_APP_SECRET', secret);
+  });
+
+  it('declares both methods on the resolver route', () => {
+    expect(resolver.config.serverRouteTriggerSettings?.httpMethods).toEqual(['GET', 'POST']);
+  });
+
+  it('returns the bare GET challenge without demanding a POST signature', async () => {
+    expect(await handler(event({
+      requestContext: { http: { method: 'GET', path: '/webhooks/server/test' } },
+      queryStringParameters: { 'hub.mode': 'subscribe', 'hub.verify_token': token, 'hub.challenge': '12345' },
+    }))).toMatchObject({ status: 200, body: '12345', headers: { 'content-type': 'text/plain' } });
+  });
+
+  it('rejects a wrong GET verification token', async () => {
+    expect(await handler(event({
+      requestContext: { http: { method: 'GET', path: '/webhooks/server/test' } },
+      queryStringParameters: { 'hub.mode': 'subscribe', 'hub.verify_token': 'wrong', 'hub.challenge': '12345' },
+    }))).toMatchObject({ status: 403 });
+  });
+
+  it('rejects a POST when the signed raw body was changed', async () => {
+    const rawBody = JSON.stringify({ object: 'whatsapp_business_account', ...delivery('waba-1', 'pn-1') });
+    const signature = 'sha256=' + createHmac('sha256', secret).update(rawBody).digest('hex');
+    expect(await handler(event({ rawBody: rawBody + ' ', body: JSON.parse(rawBody), headers: { 'x-hub-signature-256': signature } }))).toMatchObject({ status: 401 });
+  });
+
+  it('dispatches a valid signed POST to the claimed workspace', async () => {
+    claims.set('wa:phone-number:pn-1', 'ws-1');
+    const body = { object: 'whatsapp_business_account', ...delivery('waba-1', 'pn-1') };
+    const rawBody = JSON.stringify(body);
+    const signature = 'sha256=' + createHmac('sha256', secret).update(rawBody).digest('hex');
+    expect(await handler(event({ rawBody, body, headers: { 'x-hub-signature-256': signature } }))).toMatchObject({
+      workspaceId: 'ws-1', targetLogicFunctionUniversalIdentifier: LF_WEBHOOK_INGEST, payload: { body },
+    });
   });
 });

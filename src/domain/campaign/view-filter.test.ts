@@ -255,6 +255,27 @@ describe('date filters', () => {
     },
   );
 
+  it.each([
+    ['America/Mexico_City', '2026-03-08T06:00:00.000Z', '2026-03-09T06:00:00.000Z'],
+    ['America/New_York', '2026-03-08T05:00:00.000Z', '2026-03-09T04:00:00.000Z'],
+  ])('keeps a date-only selection on that civil date in %s', (timeZone, gte, lt) => {
+    expect(translateFilter({
+      filter: row({ operand: 'IS', value: '2026-03-08' }),
+      field: field('createdAt', 'DATE_TIME'),
+      now: NOW,
+      timeZone,
+    })).toEqual({ createdAt: { gte, lt } });
+  });
+
+  it('refuses an impossible civil date instead of selecting another day', () => {
+    expect(translateFilter({
+      filter: row({ operand: 'IS', value: '2026-02-30' }),
+      field: field('createdAt', 'DATE_TIME'),
+      now: NOW,
+      timeZone: 'America/Mexico_City',
+    })).toContain('invalid date');
+  });
+
   it('translates IS_BEFORE and IS_AFTER', () => {
     expect(
       translateFilter({
