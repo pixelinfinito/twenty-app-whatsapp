@@ -99,6 +99,8 @@ All four are required. The resolver fails closed on a missing `META_APP_SECRET` 
 
 ### 6. Configure the webhook in Meta
 
+**From app 0.1.3 on Twenty 2.35.0 or newer, no reverse-proxy alias or method-splitting rewrite is required for the webhook.** Use the direct URL below. Your Twenty instance must still be publicly reachable over HTTPS.
+
 Meta takes **one** callback URL and uses it for two things: a `GET` carrying `hub.challenge` to verify the endpoint, and `POST` to deliver events. This app answers **both** on one URL — the webhook resolver's server route:
 
 ```
@@ -111,38 +113,9 @@ You can sanity-check the endpoint yourself with
 `curl "<base>/webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd?hub.mode=subscribe&hub.challenge=probe&hub.verify_token=<your token>"` —
 it must return `probe`. A wrong token returns `Forbidden`, a Twenty without server-route GET support returns HTML.
 
-> **For older app releases running on Twenty older than 2.35.0** (this release requires Twenty 2.35.0 or newer), server routes answer `POST` only, and the `GET` half needs one method-splitting alias in your own reverse proxy: `GET` → `<base>/s/whatsapp/verify`, `POST` → the server-route URL above. **Caddy:**
->
-> ```caddy
-> example.com {
->     @wa_verify { path /whatsapp/webhook
->                  method GET }
->     @wa_events { path /whatsapp/webhook
->                  method POST }
->
->     handle @wa_verify {
->         rewrite * /s/whatsapp/verify?{query}
->         reverse_proxy twenty:3000
->     }
->     handle @wa_events {
->         rewrite * /webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd
->         reverse_proxy twenty:3000
->     }
->     handle { reverse_proxy twenty:3000 }
-> }
-> ```
->
-> **Nginx:**
->
-> ```nginx
-> location = /whatsapp/webhook {
->     if ($request_method = GET)  { rewrite ^ /s/whatsapp/verify?$args last; }
->     if ($request_method = POST) { rewrite ^ /webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd last; }
->     return 405;
-> }
-> ```
->
-> Do **not** let the proxy buffer, re-encode or otherwise rewrite the request body: the HMAC is computed over the exact bytes Meta sent, and any normalisation invalidates every signature. Then paste `<base>/whatsapp/webhook` as the callback instead.
+**Upgrading from the proxy setup:** replace the old `/whatsapp/webhook` callback in Meta with the direct `/webhooks/server/…` URL above, then verify it and confirm an event reaches Diagnostics. After that, the old webhook-specific proxy rewrite rules can be removed. Keep your normal HTTPS routing to Twenty.
+
+For app 0.1.2 on older Twenty servers, see the [legacy proxy setup instructions](https://github.com/pixelinfinito/twenty-app-whatsapp/blob/v0.1.2/README.md#6-configure-the-webhook-in-meta).
 
 ### 7. Subscribe the webhook fields
 
@@ -166,7 +139,7 @@ Once your number is connected, a test delivery appears under **Diagnostics**, an
 
 Seeing `unverified webhook`, `signature failed`, or no events?
 
-- **Nothing in the logs at all?** If a real delivery leaves no trace — no `signature_rejected`, no `unclaimed`, no row — then it never reached your server, and the cause is in front of it. On Cloudflare, check **Security → Events** for `AI Labyrinth Served` or a bot challenge on `/whatsapp/webhook` (see step 6). Silence in your own logs is evidence about the edge, not about the app.
+- **Nothing in the logs at all?** If a real delivery leaves no trace — no `signature_rejected`, no `unclaimed`, no row — then it never reached your server, and the cause is in front of it. On Cloudflare, check **Security → Events** for `AI Labyrinth Served` or a bot challenge on `/webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd` (the callback in step 6). Silence in your own logs is evidence about the edge, not about the app.
 - **Start with the Webhook route (POST) row in the health panel.** It probes the route directly and names the cause — see the table at the top of Installation for what each status means. This is the single most likely explanation of "verification passed but no events ever arrive".
 - **Is your number connected?** An unclaimed number's delivery is accepted and discarded with no row (step 8). Test with a connected number or you cannot tell success from failure.
 - Paste the exact server-route URL from step 6. A callback URL that verifies but delivers nothing is the classic symptom of a hand-typed URL — Meta's "Send to my server" test hits a 404 and still shows you a green tick.
