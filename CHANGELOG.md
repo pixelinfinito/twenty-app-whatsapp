@@ -2,6 +2,70 @@
 
 All notable changes to this application are documented in this file.
 
+## 0.1.3 — 2026-10-29
+
+### Changed — the reverse-proxy alias is no longer part of setup ([#4])
+
+- **The webhook resolver now answers the `GET` handshake and the `POST` deliveries on the same
+  URL** — `<base>/webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd` — because the route declares
+  `httpMethods: [GET, POST]`, which the Twenty server supports since 2.35.0 (upstream
+  twentyhq/twenty#24401). Meta takes one callback URL; that one now is it. The handler already
+  answered the handshake; the platform was the half that was missing.
+- **The support floor is twenty-sdk / twenty-client-sdk 2.35.0 and a Twenty 2.35.0 server**, the
+  release that carries #24401. `engines.twenty` (published as the manifest's
+  `requiredServerVersionRange`) refuses an older server at install instead of failing at the
+  handshake, and `.twenty-version` — the CI pin and `docker:start` default — moves to `v2.35.0`
+  with it. The previous pin, `v2.31.1`, also had no `twenty-app-dev` image to run.
+- **The health panel, the post-install log and README step 6 all lead with the direct URL.** The
+  method-splitting proxy alias moves to a clearly optional legacy fallback for a Twenty that does
+  not route `GET` to server routes, and the README now also warns that Meta's "Send to my server"
+  button reports success without looking at the status code — confirm delivery in
+  `whatsappWebhookEvent`, not by that button.
+
+### Added — Spanish ([#6])
+
+- The interface follows a Spanish workspace's locale: all catalog entries translated alongside the
+  Portuguese and English they sit between, `es-MX` formatting, and the compiler forcing every key
+  to carry all three. Terminology follows Meta's console (tier, marketing, callback stay in
+  English); the register is `tú` throughout.
+
+### Added — the rendered clock is configurable ([#5])
+
+- **`WA_TIME_ZONE`** (default `Africa/Luanda`, so no existing install moves) drives every rendered
+  date: chat and thread timestamps, day separators, the `{{now.*}}` campaign variables and the
+  "created today" audience filter. An unrecognised name degrades to the default rather than
+  blanking the panel.
+- **Day boundaries survive daylight saving.** A day with a transition is 23 or 25 hours, and the
+  old fixed `+ 86_400_000` window drifted an hour on every one of them: in New York, "created
+  today" leaked the first hour of March 9th into March 8th's audience in spring and cut the last
+  hour off November 1st in autumn, and a Sunday-evening conversation stopped being "Yesterday" at
+  00:30 the next morning. Boundaries are now found from the zone itself, so the window runs first
+  midnight to *next* midnight wherever the clocks move.
+
+### Fixed — the package typechecks again ([#3])
+
+- `aboutDescription` is dropped from `application-config.ts`: the SDK's `ApplicationConfig` has
+  omitted the field since it existed, so the app could not pass `yarn typecheck` with it present.
+  With the SDK bump and a generated `twenty-client-sdk` schema, lint, typecheck and the unit suite
+  (including `schema-enums`, which needs the generated schema to read) all run clean — and CI now
+  generates that client from its own instance before checking.
+
+### Additional fixes and release tooling
+
+- Date-only audience filters preserve the selected civil date in western time zones and reject impossible dates.
+- Account settings show registration diagnostics from Meta's `platform_type` and `code_verification_status` fields.
+- CI paces app-file uploads within Twenty's development rate limit and allows time for integration setup.
+- npm publishing checks tag/version agreement and uses the pinned Yarn version through Corepack.
+- Removed the unconfigured CD workflow. CI and npm publishing remain; merging to `main` does not deploy a workspace.
+
+**Compatibility:** requires Twenty `^2.35.0`. Existing `WA_TIME_ZONE` defaults remain `Africa/Luanda`.
+
+[#1]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/1
+[#3]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/3
+[#4]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/4
+[#5]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/5
+[#6]: https://github.com/pixelinfinito/twenty-app-whatsapp/pull/6
+
 ## 0.1.2 — everything between Meta and the resolver
 
 0.1.1 fixed the callback URL. Installing it on a live 2.31.1 server then produced **five more
@@ -144,60 +208,6 @@ Four defects reported from a live 2.31.6 install ([#1]), all confirmed against t
   no language tag and `{optInKeyword}` would put `START` inside the Portuguese sentence.
 
 [#1]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/1
-
-## Unreleased — one callback URL, no proxy; Spanish; your own clock
-
-### Changed — the reverse-proxy alias is no longer part of setup ([#4])
-
-- **The webhook resolver now answers the `GET` handshake and the `POST` deliveries on the same
-  URL** — `<base>/webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd` — because the route declares
-  `httpMethods: [GET, POST]`, which the Twenty server supports since 2.35.0 (upstream
-  twentyhq/twenty#24401). Meta takes one callback URL; that one now is it. The handler already
-  answered the handshake; the platform was the half that was missing.
-- **The support floor is twenty-sdk / twenty-client-sdk 2.35.0 and a Twenty 2.35.0 server**, the
-  release that carries #24401. `engines.twenty` (published as the manifest's
-  `requiredServerVersionRange`) refuses an older server at install instead of failing at the
-  handshake, and `.twenty-version` — the CI pin and `docker:start` default — moves to `v2.35.0`
-  with it. The previous pin, `v2.31.1`, also had no `twenty-app-dev` image to run.
-- **The health panel, the post-install log and README step 6 all lead with the direct URL.** The
-  method-splitting proxy alias moves to a clearly optional legacy fallback for a Twenty that does
-  not route `GET` to server routes, and the README now also warns that Meta's "Send to my server"
-  button reports success without looking at the status code — confirm delivery in
-  `whatsappWebhookEvent`, not by that button.
-
-### Added — Spanish ([#6])
-
-- The interface follows a Spanish workspace's locale: All catalog entries translated alongside the
-  Portuguese and English they sit between, `es-MX` formatting, and the compiler forcing every key
-  to carry all three. Terminology follows Meta's console (tier, marketing, callback stay in
-  English); the register is `tú` throughout.
-
-### Added — the rendered clock is configurable ([#5])
-
-- **`WA_TIME_ZONE`** (default `Africa/Luanda`, so no existing install moves) drives every rendered
-  date: chat and thread timestamps, day separators, the `{{now.*}}` campaign variables and the
-  "created today" audience filter. An unrecognised name degrades to the default rather than
-  blanking the panel.
-- **Day boundaries survive daylight saving.** A day with a transition is 23 or 25 hours, and the
-  old fixed `+ 86_400_000` window drifted an hour on every one of them: in New York, "created
-  today" leaked the first hour of March 9th into March 8th's audience in spring and cut the last
-  hour off November 1st in autumn, and a Sunday-evening conversation stopped being "Yesterday" at
-  00:30 the next morning. Boundaries are now found from the zone itself, so the window runs first
-  midnight to *next* midnight wherever the clocks move.
-
-### Fixed — the package typechecks again ([#3])
-
-- `aboutDescription` is dropped from `application-config.ts`: the SDK's `ApplicationConfig` has
-  omitted the field since it existed, so the app could not pass `yarn typecheck` with it present.
-  With the SDK bump and a generated `twenty-client-sdk` schema, lint, typecheck and the unit suite
-  (including `schema-enums`, which needs the generated schema to read) all run clean — and CI now
-  generates that client from its own instance before checking.
-
-[#1]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/1
-[#3]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/3
-[#4]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/4
-[#5]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/5
-[#6]: https://github.com/pixelinfinito/twenty-app-whatsapp/pull/6
 
 ## Unreleased — the attachment panel loses a dead tab and gains a picker
 
