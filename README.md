@@ -193,6 +193,14 @@ yarn twenty dev            # sync the app and watch
 
 See `SETUP.md` for the full local guide, `specs/` for design and architecture notes, and `CHANGELOG.md` for notable changes. `yarn test:unit` runs the local test suite; `yarn test` runs integration tests against a disposable workspace.
 
+### CI and releases
+
+- [CI](.github/workflows/ci.yml) checks pull requests and pushes to `main`: it installs the app in a disposable Twenty instance, generates the typed client, and runs lint, typecheck, unit tests and integration tests.
+- [Compatibility checks](.github/workflows/compat.yml) run weekly against the latest Twenty release and can also be started manually for a chosen version.
+- [Publish](.github/workflows/publish.yml) releases the app to npm when a `vX.Y.Z` tag is pushed, or when started manually. Release tags must match `package.json`. Follow the [release checklist](specs/16-release-checklist.md) and push the source commit before tagging it.
+
+Merging to `main` does not publish to npm or deploy to a live Twenty workspace. Workspace administrators install or update the released package through **Settings → Apps**.
+
 ## Learn more
 
 - [Twenty Apps documentation](https://docs.twenty.com/developers/extend/apps/getting-started/quick-start)
