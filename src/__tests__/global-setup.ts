@@ -172,17 +172,21 @@ export async function setup() {
 
   writeConfig(apiUrl, apiKey);
 
-  await appUninstall({ appPath: APP_PATH }).catch(() => {});
+  // CI already applied this exact source before generating the client and checking it.
+  // Reuse that fresh install instead of uploading all files again through Vitest.
+  if (process.env.WA_TEST_USE_INSTALLED_APP !== 'true') {
+    await appUninstall({ appPath: APP_PATH }).catch(() => {});
 
-  const result = await appDevOnce({
-    appPath: APP_PATH,
-    onProgress: (message: string) => console.log(`[dev] ${message}`),
-  });
+    const result = await appDevOnce({
+      appPath: APP_PATH,
+      onProgress: (message: string) => console.log(`[dev] ${message}`),
+    });
 
-  if (!result.success) {
-    throw new Error(
-      `Dev sync failed: ${result.error?.message ?? 'Unknown error'}`,
-    );
+    if (!result.success) {
+      throw new Error(
+        `Dev sync failed: ${result.error?.message ?? 'Unknown error'}`,
+      );
+    }
   }
 
   await enableApiKeyRoutes(apiUrl, apiKey);

@@ -2,6 +2,25 @@
 
 All notable changes to this application are documented in this file.
 
+## 0.1.4 — 2026-11-02
+
+### Fixed
+
+- Installation on newer Twenty servers no longer fails with `forwardedRequestHeaders cannot
+  include credential headers: authorization`. Authenticated HTTP routes use the platform's
+  execution context to identify the caller instead of forwarding their session credential.
+- Caller role checks use the verified workspace member ID, including when role assignments omit
+  `userWorkspaceId`. Agent/admin restrictions, workspace-admin setup access, and the default
+  refusal of API-key callers remain enforced. Role assignment reads use application access.
+- Regression coverage rejects credential forwarding on every HTTP route and checks that request
+  body identity fields cannot impersonate a workspace administrator.
+
+- Updated contact and audience phone selections for typed `additionalPhones` objects and let Twenty
+  determine the creator name instead of passing the removed `ActorCreateInput.name` field.
+
+**Compatibility:** requires Twenty `^2.53.0`; CI now tests `v2.53.1`, matching the target workspace.
+Older servers remain on 0.1.3.
+
 ## 0.1.3 — 2026-10-29
 
 ### Changed — the reverse-proxy alias is no longer part of setup ([#4])

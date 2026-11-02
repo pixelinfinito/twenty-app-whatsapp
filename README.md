@@ -32,7 +32,7 @@ The interface ships in **English, Portuguese and Spanish**, following each user'
 
 ## Requirements
 
-- A Twenty **2.35.0 or newer (2.x)** workspace (cloud or self-hosted) whose public URL is reachable over HTTPS — Meta must be able to call your webhook.
+- A Twenty **2.53.0 or newer (2.x)** workspace (cloud or self-hosted) whose public URL is reachable over HTTPS — Meta must be able to call your webhook.
 - A Meta Business account with an approved **WhatsApp Business phone number**.
 - A Meta app with the WhatsApp product and a system-user access token.
 

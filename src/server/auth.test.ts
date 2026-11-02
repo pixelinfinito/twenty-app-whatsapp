@@ -1,11 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { kv } from 'twenty-sdk/logic-function';
+
+import { config } from './config';
+import * as clients from './clients';
+import { handler as uploadHandler } from '../logic-functions/wa-upload-route';
 
 import { ROLE_ADMIN, ROLE_AGENT } from '../constants/universal-identifiers';
 import {
   ForbiddenError,
   UnauthorizedError,
   authErrorResponse,
-  readBearerToken,
+  requireCaller,
   requireRole,
   rolesForCaller,
   type Caller,
@@ -61,30 +66,134 @@ describe('requireRole', () => {
   });
 });
 
-describe('readBearerToken', () => {
-  it('reads the header whatever case the gateway used', () => {
-    expect(readBearerToken({ Authorization: 'Bearer abc' })).toBe('abc');
-    expect(readBearerToken({ authorization: 'Bearer abc' })).toBe('abc');
-    expect(readBearerToken({ AUTHORIZATION: 'bearer abc' })).toBe('abc');
+describe('requireCaller execution context', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const cacheRoles = (workspaceAdmin = false): void => {
+    vi.spyOn(kv, 'get').mockResolvedValue({
+      at: Date.now(),
+      roles: [{
+        universalIdentifier: workspaceAdmin ? null : ROLE_AGENT,
+        canUpdateAllSettings: workspaceAdmin,
+        members: [{ id: 'wm-1', userWorkspaceId: null }],
+      }],
+    });
+  };
+
+  it('identifies an agent without receiving their session token', async () => {
+    cacheRoles();
+
+    const result = await requireCaller({ userWorkspaceId: 'uw-1', workspaceMemberId: 'wm-1' });
+
+    expect(result.workspaceMemberId).toBe('wm-1');
+    expect(result.isMachine).toBe(false);
+    expect(() => requireRole(result, 'agent')).not.toThrow();
+    expect(() => requireRole(result, 'admin')).toThrow(ForbiddenError);
   });
 
-  /** Some callers send the raw token with no scheme; both forms are the token. */
-  it('accepts a bare token', () => {
-    expect(readBearerToken({ authorization: 'abc' })).toBe('abc');
+  it('reads role assignments as the application on a cache miss', async () => {
+    vi.spyOn(kv, 'get').mockResolvedValue(null);
+    vi.spyOn(kv, 'set').mockResolvedValue(undefined);
+    const query = vi.fn().mockResolvedValue({ getRoles: [{
+      universalIdentifier: ROLE_AGENT,
+      canUpdateAllSettings: false,
+      workspaceMembers: [{ id: 'wm-1', userWorkspaceId: null }],
+    }] });
+    vi.spyOn(clients, 'applicationMetadataClient').mockReturnValue({ query } as never);
+
+    const result = await requireCaller({ userWorkspaceId: 'uw-1', workspaceMemberId: 'wm-1' });
+
+    expect(query).toHaveBeenCalledOnce();
+    expect(result.isAgent).toBe(true);
   });
 
-  it('treats an absent, empty or scheme-only header as no token', () => {
-    expect(readBearerToken(undefined)).toBeNull();
-    expect(readBearerToken({})).toBeNull();
-    expect(readBearerToken({ authorization: '' })).toBeNull();
-    expect(readBearerToken({ authorization: 'Bearer   ' })).toBeNull();
+  it('refuses access when role assignments cannot be read', async () => {
+    vi.spyOn(kv, 'get').mockResolvedValue(null);
+    const query = vi.fn().mockRejectedValue(new Error('metadata unavailable'));
+    vi.spyOn(clients, 'applicationMetadataClient').mockReturnValue({ query } as never);
+
+    await expect(requireCaller({ userWorkspaceId: 'uw-1', workspaceMemberId: 'wm-1' }))
+      .rejects.toThrow(ForbiddenError);
+  });
+
+  it('recognizes the workspace administrator on a fresh install', async () => {
+    cacheRoles(true);
+
+    const result = await requireCaller({ userWorkspaceId: 'uw-1', workspaceMemberId: 'wm-1' });
+
+    expect(result.isAdmin).toBe(true);
+    expect(() => requireRole(result, 'admin')).not.toThrow();
+  });
+
+  it('does not give another member the cached agent role', async () => {
+    cacheRoles();
+
+    const result = await requireCaller({ userWorkspaceId: 'uw-2', workspaceMemberId: 'wm-2' });
+
+    expect(result.isAgent).toBe(false);
+    expect(() => requireRole(result, 'agent')).toThrow(ForbiddenError);
+  });
+
+  it('ignores forged caller IDs in the HTTP payload', async () => {
+    cacheRoles(true);
+    const response = await uploadHandler({
+      userWorkspaceId: 'uw-1',
+      body: { userWorkspaceId: 'uw-1', workspaceMemberId: 'wm-1' },
+    } as never, {
+      workspaceId: 'ws-1', userWorkspaceId: 'uw-2', workspaceMemberId: 'wm-2',
+      retryCount: 0, maxRetries: 0,
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('allows an authenticated agent through a route without a forwarded header', async () => {
+    cacheRoles();
+    const response = await uploadHandler({ body: {} } as never, {
+      workspaceId: 'ws-1', userWorkspaceId: 'uw-1', workspaceMemberId: 'wm-1',
+      retryCount: 0, maxRetries: 0,
+    });
+
+    // The route passes authorization and reaches its normal input validation.
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: 'data is required' });
+  });
+
+  it('refuses API keys by default', async () => {
+    vi.spyOn(config, 'allowApiKeyAdmin').mockReturnValue(false);
+
+    await expect(requireCaller({ userWorkspaceId: null, workspaceMemberId: null }))
+      .rejects.toThrow(ForbiddenError);
+  });
+
+  it('keeps explicitly enabled machine callers unattributed', async () => {
+    vi.spyOn(config, 'allowApiKeyAdmin').mockReturnValue(true);
+
+    const result = await requireCaller({ userWorkspaceId: null, workspaceMemberId: null });
+
+    expect(result).toMatchObject({ isMachine: true, isAdmin: true, workspaceMemberId: null });
+  });
+
+  it('never promotes a missing context to an enabled API-key administrator', async () => {
+    vi.spyOn(config, 'allowApiKeyAdmin').mockReturnValue(true);
+
+    await expect(requireCaller(undefined as never)).rejects.toThrow(UnauthorizedError);
+  });
+
+  it('does not promote an unidentified person to an API-key administrator', async () => {
+    cacheRoles();
+    vi.spyOn(config, 'allowApiKeyAdmin').mockReturnValue(true);
+
+    const result = await requireCaller({ userWorkspaceId: 'uw-1', workspaceMemberId: null });
+
+    expect(result).toMatchObject({ isMachine: false, isAdmin: false, isAgent: false });
   });
 });
 
 /**
  * D-53. The join that failed in production, and the reason it failed: the
  * platform lists role members by `workspaceMember.id` and leaves
- * `userWorkspaceId` null, while the route event carries only `userWorkspaceId`.
+ * `userWorkspaceId` null. The execution context supplies the member ID directly.
  * Matching on either key is what lets a real person be placed at all.
  */
 describe('rolesForCaller', () => {

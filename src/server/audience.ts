@@ -37,7 +37,7 @@ const PERSON_FIELDS = {
     primaryPhoneNumber: true,
     primaryPhoneCallingCode: true,
     primaryPhoneCountryCode: true,
-    additionalPhones: true,
+    additionalPhones: { number: true, callingCode: true, countryCode: true },
   },
   linkedinLink: { primaryLinkUrl: true },
   whatsappOptInStatus: true,
@@ -53,8 +53,8 @@ export type AudiencePage = {
 /**
  * Every number on a Person, primary first.
  *
- * `additionalPhones` is RAW_JSON with no enforced shape: Twenty writes objects
- * (`{ number, callingCode }`), imports have been seen to write bare strings,
+ * Current Twenty returns typed additional phones (`{ number, callingCode }`).
+ * Older imports have also been seen to write bare strings,
  * and a hand-edited record can hold either. All three are read, because the
  * cost of misreading one is a contact excluded as `invalid_phone` who has a
  * perfectly good number in the CRM.

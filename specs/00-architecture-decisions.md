@@ -1195,6 +1195,13 @@ does it: Core `workspaceMember` has `userId` and no `userWorkspaceId`; metadata 
 declares the field and returns null; `currentUser` under the *app's* token is `Forbidden`, and
 would answer for the app anyway.
 
+**2026-11-02 correction (0.1.4):** Twenty now rejects credential forwarding on HTTP routes.
+The handler's second argument, `LogicFunctionExecutionContext`, supplies the authenticated
+`userWorkspaceId` and `workspaceMemberId`. All authenticated routes pass that context to
+`requireCaller`; role assignments are read with application access and matched by the verified
+member ID. No caller credential or body-supplied identity is used. The historical workaround
+below is superseded.
+
 **The caller can.** `httpRouteTriggerSettings.forwardedRequestHeaders: ['authorization']` delivers
 the requester's own bearer token to the handler, and `currentUser` under *that* token answers for
 the person holding it. `requireCaller` therefore asks the platform who the caller is, and joins

@@ -1,5 +1,9 @@
 import { defineLogicFunction } from 'twenty-sdk/define';
-import { Response, type RoutePayload } from 'twenty-sdk/logic-function';
+import {
+  Response,
+  type LogicFunctionExecutionContext,
+  type RoutePayload,
+} from 'twenty-sdk/logic-function';
 
 import {
   LF_CAMPAIGN_SNAPSHOT,
@@ -543,11 +547,12 @@ const testSend = async ({
 
 export const handler = async (
   event: RoutePayload<CampaignControlBody>,
+  executionContext: LogicFunctionExecutionContext,
 ): Promise<Response> => {
   const log = logger.child({ fn: 'wa-campaign-control' });
 
   try {
-    const caller = await requireCaller(event);
+    const caller = await requireCaller(executionContext);
 
     const body = event.body ?? {};
     const action = body.action ?? 'preflight';
@@ -1274,9 +1279,6 @@ export default defineLogicFunction({
     path: '/whatsapp/campaign',
     httpMethod: 'POST',
     isAuthRequired: true,
-    // The caller's own token, so `requireCaller` can ask the platform who they
-    // are rather than guess from a `userWorkspaceId` nothing else joins on (D-53).
-    forwardedRequestHeaders: ['authorization'],
   },
   handler,
 });

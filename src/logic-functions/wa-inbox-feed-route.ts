@@ -1,5 +1,9 @@
 import { defineLogicFunction } from 'twenty-sdk/define';
-import { Response, type RoutePayload } from 'twenty-sdk/logic-function';
+import {
+  Response,
+  type LogicFunctionExecutionContext,
+  type RoutePayload,
+} from 'twenty-sdk/logic-function';
 
 import { LF_INBOX_FEED_ROUTE } from '../constants/universal-identifiers';
 import {
@@ -714,11 +718,13 @@ const bootstrapScope = async (caller: Caller, now: Date): Promise<FeedEnvelope> 
   };
 };
 
-export const handler = async (event: RoutePayload): Promise<Response> => {
+export const handler = async (event: RoutePayload,
+  executionContext: LogicFunctionExecutionContext,
+): Promise<Response> => {
   const log = logger.child({ fn: 'wa-inbox-feed-route' });
 
   try {
-    const caller = await requireCaller(event);
+    const caller = await requireCaller(executionContext);
 
     requireRole(caller, 'agent');
 
@@ -774,9 +780,6 @@ export default defineLogicFunction({
     path: '/whatsapp/feed',
     httpMethod: 'GET',
     isAuthRequired: true,
-    // The caller's own token, so `requireCaller` can ask the platform who they
-    // are rather than guess from a `userWorkspaceId` nothing else joins on (D-53).
-    forwardedRequestHeaders: ['authorization'],
   },
   handler,
 });

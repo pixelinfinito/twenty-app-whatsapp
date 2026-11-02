@@ -100,7 +100,7 @@ const PUBLIC_ROUTES: Record<string, string> = {
 type RouteFacts = {
   path: string;
   isAuthRequired: boolean;
-  forwardsAuthorization: boolean;
+  forwardsCredentialHeaders: boolean;
   callsRequireCaller: boolean;
   roles: Set<string>;
 };
@@ -115,8 +115,8 @@ const routeFactsFor = (file: string): RouteFacts | null => {
   return {
     path,
     isAuthRequired: /isAuthRequired:\s*true/.test(source),
-    forwardsAuthorization: /forwardedRequestHeaders:\s*\[\s*'authorization'\s*\]/.test(source),
-    callsRequireCaller: /requireCaller\s*\(/.test(source),
+    forwardsCredentialHeaders: /forwardedRequestHeaders:\s*\[[^\]]*['"](?:authorization|cookie|proxy-authorization)['"]/i.test(source),
+    callsRequireCaller: /requireCaller\(executionContext\)/.test(source),
     roles: new Set(
       [...source.matchAll(/requireRole\(\s*caller\s*,\s*'(admin|agent)'\s*\)/g)].map(
         (match) => match[1]!,
@@ -165,12 +165,8 @@ describe('the route role matrix (SEC-5)', () => {
     expect(route!.facts.isAuthRequired).toBe(true);
     expect(route!.facts.callsRequireCaller).toBe(true);
 
-    /**
-     * Without the forwarded header the route cannot ask the platform who the
-     * caller is and falls back to a `userWorkspaceId` nothing else joins on —
-     * which is how `/s/*` auth was broken for every human until D-53.
-     */
-    expect(route!.facts.forwardsAuthorization).toBe(true);
+    // Twenty rejects credential forwarding; identity comes from execution context.
+    expect(route!.facts.forwardsCredentialHeaders).toBe(false);
   });
 
   it.each(Object.entries(ROUTES))('%s gates at the reviewed role', (_path, spec) => {
