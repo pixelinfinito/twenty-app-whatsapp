@@ -15,7 +15,11 @@ All notable changes to this application are documented in this file.
 - Regression coverage rejects credential forwarding on every HTTP route and checks that request
   body identity fields cannot impersonate a workspace administrator.
 
-**Compatibility:** continues to require Twenty `^2.35.0`.
+- Updated contact and audience phone selections for typed `additionalPhones` objects and let Twenty
+  determine the creator name instead of passing the removed `ActorCreateInput.name` field.
+
+**Compatibility:** requires Twenty `^2.53.0`; CI now tests `v2.53.1`, matching the target workspace.
+Older servers remain on 0.1.3.
 
 ## 0.1.3 — 2026-10-29
 
