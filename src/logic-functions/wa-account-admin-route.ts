@@ -1,5 +1,10 @@
 import { defineLogicFunction } from 'twenty-sdk/define';
-import { Response, kv, type RoutePayload } from 'twenty-sdk/logic-function';
+import {
+  Response,
+  kv,
+  type LogicFunctionExecutionContext,
+  type RoutePayload,
+} from 'twenty-sdk/logic-function';
 
 import {
   LF_ACCOUNT_ADMIN_ROUTE,
@@ -593,11 +598,12 @@ const probeNumber = async (
 
 export const handler = async (
   event: RoutePayload<AccountRouteBody>,
+  executionContext: LogicFunctionExecutionContext,
 ): Promise<Response> => {
   const log = logger.child({ fn: 'wa-account-admin-route' });
 
   try {
-    const caller = await requireCaller(event);
+    const caller = await requireCaller(executionContext);
     requireRole(caller, 'admin');
 
     const body = event.body ?? {};
@@ -1055,9 +1061,6 @@ export default defineLogicFunction({
     path: '/whatsapp/account',
     httpMethod: 'POST',
     isAuthRequired: true,
-    // The caller's own token, so `requireCaller` can ask the platform who they
-    // are rather than guess from a `userWorkspaceId` nothing else joins on (D-53).
-    forwardedRequestHeaders: ['authorization'],
   },
   handler,
 });

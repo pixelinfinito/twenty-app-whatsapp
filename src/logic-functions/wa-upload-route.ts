@@ -1,5 +1,9 @@
 import { defineLogicFunction } from 'twenty-sdk/define';
-import { Response, type RoutePayload } from 'twenty-sdk/logic-function';
+import {
+  Response,
+  type LogicFunctionExecutionContext,
+  type RoutePayload,
+} from 'twenty-sdk/logic-function';
 
 import { LF_UPLOAD_ROUTE, OBJ_MESSAGE } from '../constants/universal-identifiers';
 import { validateOutboundMedia, type OutboundMediaKind } from '../domain/media-limits';
@@ -55,11 +59,12 @@ const UPLOADABLE_KINDS = new Set<OutboundMediaKind>(['audio', 'image', 'video', 
 
 export const handler = async (
   event: RoutePayload<UploadRequestBody>,
+  executionContext: LogicFunctionExecutionContext,
 ): Promise<Response> => {
   const log = logger.child({ fn: 'wa-upload-route' });
 
   try {
-    const caller = await requireCaller(event);
+    const caller = await requireCaller(executionContext);
     requireRole(caller, 'agent');
 
     const body = event.body ?? {};
@@ -174,9 +179,6 @@ export default defineLogicFunction({
     path: '/whatsapp/upload',
     httpMethod: 'POST',
     isAuthRequired: true,
-    // The caller's own token, so `requireCaller` can ask the platform who they
-    // are rather than guess from a `userWorkspaceId` nothing else joins on (D-53).
-    forwardedRequestHeaders: ['authorization'],
   },
   handler,
 });

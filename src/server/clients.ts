@@ -17,19 +17,15 @@ export const coreClient = (): CoreApiClient => (core ??= new CoreApiClient());
 
 export const metadataClient = (): MetadataApiClient => (metadata ??= new MetadataApiClient());
 
-/**
- * A metadata client that speaks as the **caller**, not as the app.
- *
- * Deliberately not memoised: the token identifies a person, and handing one
- * request's identity to the next is the whole class of bug this exists to
- * avoid. Used only by `requireCaller`, to ask the platform who the bearer of
- * this token is (SEC-5, D-53).
- */
-export const callerMetadataClient = (bearerToken: string): MetadataApiClient =>
-  new MetadataApiClient({ headers: { authorization: `Bearer ${bearerToken}` } });
+/** Role checks need the app's permission to read assignments, even for an agent. */
+let applicationMetadata: MetadataApiClient | null = null;
+
+export const applicationMetadataClient = (): MetadataApiClient =>
+  (applicationMetadata ??= new MetadataApiClient({ runAs: 'application' }));
 
 /** Test seam. Also the correct response to a token rotation mid-process. */
 export const resetClients = (): void => {
   core = null;
   metadata = null;
+  applicationMetadata = null;
 };
