@@ -77,11 +77,10 @@ describe('the Meta seam', () => {
    * media CDN URL arrives *inside* Meta's payload, so a module could download
    * from it without ever naming a host. One HTTP layer means one `fetch`.
    *
-   * `server/files.ts` is the single exception, and it exists because an
+   * `server/files.ts` is the first exception, and it exists because an
    * outbound attachment's bytes live in Twenty's own storage — not Meta's — and
    * the SDK's REST client reads every response with `.text()`, which corrupts
-   * binary content silently. The exception is narrowed by the next test rather
-   * than by trust.
+   * binary content silently. This exception is constrained by the construction tests below.
    */
   const HTTP_CALLERS = ['server/files.ts'];
 
@@ -146,6 +145,7 @@ describe('the Meta seam', () => {
    */
   const SECRET_READERS = ['application-config.ts', 'server/logger.ts'];
 
+
   const withoutSecretReaders = productionOutsideProvider.filter(
     (file) => !SECRET_READERS.some((allowed) => file.endsWith(allowed)),
   );
@@ -157,6 +157,7 @@ describe('the Meta seam', () => {
   it('keeps the app secret to the provider and the config declaration', () => {
     expect(offenders(/META_APP_SECRET/, withoutSecretReaders)).toEqual([]);
   });
+
 
   /**
    * The corollary rule. The redactor's licence to read secrets is only safe
@@ -207,11 +208,11 @@ describe('the single send path', () => {
    * above.
    */
   it('confines the read-receipt call to the thread actions route', () => {
-    const callers = logicFunctions
+    const callers = files.filter((file) => !isTestFile(file))
       .filter((file) => /\.markAsRead\s*\(/.test(contentsOf(file)))
       .map((file) => relative(SRC, file));
 
-    expect(callers).toEqual(['logic-functions/wa-thread-actions-route.ts']);
+    expect(callers).toEqual(['server/operation-thread-actions-route.ts']);
   });
 });
 
@@ -362,12 +363,7 @@ describe('logic function discovery', () => {
     expect(offending).toEqual([]);
   });
 
-  /**
-   * MCP gets two deliberately narrow surfaces: catalogue discovery and one
-   * idempotent template send. Accidentally exposing the workflow action as a
-   * tool would bypass the exact-id/request-id contract and misattribute sends.
-   */
-  it('exposes only the two dedicated WhatsApp MCP tools', () => {
+  it('exposes the reviewed AI wrappers and keeps workers/workflows internal', () => {
     const tools = logicFunctionFiles
       .filter((file) => /\btoolTriggerSettings\s*:/.test(contentsOf(file)))
       .map((file) => relative(SRC, file))
@@ -376,13 +372,15 @@ describe('logic function discovery', () => {
     expect(tools).toEqual([
       'logic-functions/wa-list-sendable-templates-tool.ts',
       'logic-functions/wa-send-template-tool.ts',
+      ...['accounts', 'campaigns', 'consent', 'get-capabilities', 'get-thread', 'list-threads', 'send-message', 'templates', 'thread-action', 'webhooks']
+        .map((name) => `logic-functions/whatsapp-${name}.ts`),
     ]);
 
     for (const file of tools) {
       const source = contentsOf(join(SRC, file));
 
-      expect(source).toMatch(/toolTriggerSettings\s*:\s*\{\s*inputSchema\s*:/);
-      expect(source).toMatch(/additionalProperties\s*:\s*false/);
+      expect(source).toMatch(/toolTriggerSettings\s*:\s*toolTrigger\(/);
+      expect(source).toMatch(/authenticatedTool\(/);
     }
   });
 });

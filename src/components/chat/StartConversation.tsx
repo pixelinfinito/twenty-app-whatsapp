@@ -28,6 +28,7 @@ import { TemplatePicker } from './TemplatePicker';
  */
 
 export type StartConversationProps = {
+  fieldMetadataId?: string | null;
   policy: FeedPolicy | undefined;
   templates: FeedTemplate[];
   /** From the feed: what the send route needs to open a conversation. */
@@ -35,7 +36,7 @@ export type StartConversationProps = {
   canSend: boolean;
   isSending: boolean;
   t: Translate;
-  onSendTemplate: (templateId: string, parameters: ResolvedParameters) => void;
+  onSendTemplate: (templateId: string, parameters: ResolvedParameters) => Promise<boolean>;
 };
 
 type Diagnosis = {
@@ -123,6 +124,7 @@ export const diagnoseStart = (
 };
 
 export const StartConversation = ({
+  fieldMetadataId,
   policy,
   templates,
   start,
@@ -143,15 +145,17 @@ export const StartConversation = ({
 
   if (showPicker) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', margin: 'auto', width: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', width: '100%' }}>
         <TemplatePicker
+          fieldMetadataId={fieldMetadataId}
           templates={templates}
           t={t}
           isSending={isSending}
           onCancel={() => setShowPicker(false)}
-          onSend={(templateId, parameters) => {
-            onSendTemplate(templateId, parameters);
-            setShowPicker(false);
+          onSend={async (templateId, parameters) => {
+            const accepted = await onSendTemplate(templateId, parameters);
+            if (accepted) setShowPicker(false);
+            return accepted;
           }}
         />
       </div>
@@ -188,7 +192,7 @@ export const StartConversation = ({
               onClick={() => setShowPicker(true)}
             />
           ) : diagnosis.canStart && templates.length === 0 ? (
-            <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.tertiary }}>
+            <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.secondary }}>
               {t('chat.noTemplates')}
             </span>
           ) : undefined

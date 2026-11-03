@@ -139,6 +139,7 @@ export type VariableMapping = {
         kind: 'media';
         mediaId?: string | null;
         fileId?: string | null;
+        filename?: string | null;
         filePath?: string | null;
         fileUrl?: string | null;
       }
@@ -231,6 +232,7 @@ export const resolveParameters = ({
       const {
         mediaId = null,
         fileId = null,
+        filename = null,
         filePath = null,
         fileUrl = null,
       } = mapping.header;
@@ -245,7 +247,7 @@ export const resolveParameters = ({
         missingKeys.push(`header ${spec.header.format.toLowerCase()}`);
       }
 
-      return { kind: 'media', mediaId, fileId, filePath, fileUrl };
+      return { kind: 'media', mediaId, fileId, filePath, fileUrl, ...(filename ? { filename } : {}) };
     }
 
     if (spec.header.variableCount === 0) return undefined;

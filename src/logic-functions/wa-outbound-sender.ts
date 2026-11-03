@@ -53,6 +53,7 @@ import {
 } from '../providers/whatsapp/payload';
 import type { SendPayload } from '../providers/whatsapp/types';
 import { config } from '../server/config';
+import { retainedMediaUrl } from '../server/retained-media';
 import { effectiveConsentStatus } from '../server/consent';
 import { downloadWorkspaceFile, WorkspaceFileError } from '../server/files';
 import { describeError, logger } from '../server/logger';
@@ -371,10 +372,11 @@ export const buildOutboundPayload = ({
 export const mediaHandleFor = (
   spec: SendSpec,
   template: TemplateContext | null,
-): { kind: MediaKind; url?: string | null; path?: string | null; filename?: string | null } | null => {
+): { kind: MediaKind; fileId?: string | null; url?: string | null; path?: string | null; filename?: string | null } | null => {
   if (spec.kind === 'media') {
     return {
       kind: spec.mediaKind,
+      fileId: spec.fileId,
       url: spec.fileUrl,
       path: spec.filePath,
       filename: spec.filename,
@@ -392,7 +394,7 @@ export const mediaHandleFor = (
 
   const kind = mediaKindForHeaderFormat(template.spec.header?.format) ?? 'image';
 
-  return { kind, url: header.fileUrl ?? null, path: header.filePath ?? null };
+  return { kind, fileId: header.fileId, url: header.fileUrl ?? null, path: header.filePath ?? null };
 };
 
 /**
@@ -405,11 +407,16 @@ export const mediaHandleFor = (
 const resolveMediaId = async ({
   account,
   handle,
+  message,
 }: {
   account: WhatsappAccountRecord;
-  handle: { kind: MediaKind; url?: string | null; path?: string | null; filename?: string | null };
+  message: WhatsappMessageRecord;
+  handle: { kind: MediaKind; fileId?: string | null; url?: string | null; path?: string | null; filename?: string | null };
 }): Promise<string> => {
-  const file = await downloadWorkspaceFile({ url: handle.url, path: handle.path });
+  const url = handle.fileId ? await retainedMediaUrl(message.id, handle.fileId) : null;
+  const file = await downloadWorkspaceFile(url ? { url } : { url: handle.url, path: handle.path });
+  message.mediaMeta = { ...asJson<JsonObject>(message.mediaMeta, {}), mimeType: file.mimeType, fileSize: file.buffer.length };
+  await patchMessage(message.id, { mediaMeta: message.mediaMeta });
 
   const validation = validateOutboundMedia({
     kind: handle.kind,
@@ -905,7 +912,7 @@ export const sendOutbound = async (
     const mediaId =
       handle === null
         ? asJson<{ metaMediaId?: string }>(message.mediaMeta, {}).metaMediaId ?? null
-        : await resolveMediaId({ account, handle });
+        : await resolveMediaId({ account, handle, message });
 
     const wirePayload = buildOutboundPayload({
       spec,

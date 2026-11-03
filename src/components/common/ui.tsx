@@ -1,5 +1,5 @@
 import 'twenty-ui/style.css';
-import { useRef } from 'react';
+import { Children, cloneElement, isValidElement, useId, useRef, type ReactElement } from 'react';
 import { Tag } from 'twenty-ui/data-display';
 import { Button } from 'twenty-ui/input';
 import { useTheme } from 'twenty-ui/theme-constants';
@@ -83,6 +83,20 @@ export const Field = ({
   children: React.ReactNode;
 }) => {
   const theme = useTheme();
+  const generatedId = useId();
+  type ControlProps = { id?: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean };
+  let foundControl: ReactElement<ControlProps> | undefined;
+  Children.forEach(children, (child) => {
+    // Remote DOM wraps intrinsic controls in components. Their element type
+    // is not the string "input" even when the source uses a native input.
+    if (!foundControl && isValidElement(child)) {
+      foundControl = child as ReactElement<ControlProps>;
+    }
+  });
+  const control = foundControl;
+  const id = control?.props.id ?? `wa-field-${generatedId}`;
+  const descriptionId = `${id}-description`;
+  const description = error ?? hint;
 
   /**
    * `sm` label over an `md` control, matching the label-over-input rhythm of
@@ -90,30 +104,36 @@ export const Field = ({
    * page — legible to nobody — so nothing interactive or required wears it.
    */
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[1] }}>
-      <span
+    <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[1], minWidth: 0 }}>
+      <label
+        htmlFor={control ? id : undefined}
         style={{
           fontSize: theme.font.size.sm,
           fontWeight: theme.font.weight.medium,
-          color: theme.font.color.light,
+          color: theme.font.color.secondary,
         }}
       >
         {label}
-      </span>
-      {children}
+      </label>
+      {control ? Children.map(children, (child) => child === control ? cloneElement(control, {
+        id,
+        'aria-invalid': error ? true : control.props['aria-invalid'],
+        'aria-describedby': [control.props['aria-describedby'], description ? descriptionId : null].filter(Boolean).join(' ') || undefined,
+      }) : child) : children}
       {error !== undefined ? (
         <span
+          id={descriptionId}
           role="alert"
           style={{ fontSize: theme.font.size.xs, color: theme.font.color.danger }}
         >
           {error}
         </span>
       ) : hint === undefined ? null : (
-        <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}>
+        <span id={descriptionId} style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
           {hint}
         </span>
       )}
-    </label>
+    </div>
   );
 };
 
@@ -289,7 +309,7 @@ export const EmptyState = ({
           height: '40px',
           borderRadius: theme.border.radius.rounded,
           background: theme.background.transparent.light,
-          color: theme.font.color.tertiary,
+          color: theme.font.color.secondary,
         }}
       >
         <Icon size={theme.icon.size.lg} stroke={theme.icon.stroke.sm} color="currentColor" />
@@ -306,7 +326,7 @@ export const EmptyState = ({
       </span>
 
       {body === undefined ? null : (
-        <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.tertiary }}>
+        <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.secondary }}>
           {body}
         </span>
       )}
@@ -338,7 +358,8 @@ export const Banner = ({
 
   return (
     <div
-      role="status"
+      role={tone === 'danger' ? 'alert' : 'status'}
+      aria-atomic="true"
       style={{
         padding: theme.spacing[2],
         borderRadius: theme.border.radius.sm,
@@ -499,7 +520,7 @@ export const Tabs = ({
               active === tab.key ? theme.border.color.strong : 'transparent'
             }`,
             background: 'transparent',
-            color: active === tab.key ? theme.font.color.primary : theme.font.color.tertiary,
+            color: active === tab.key ? theme.font.color.primary : theme.font.color.secondary,
             cursor: 'pointer',
             fontFamily: theme.font.family,
             fontSize: theme.font.size.md,
@@ -533,7 +554,7 @@ export const TabPanel = ({
     id={tabPanelId(group, tabKey)}
     aria-labelledby={`wa-tabbtn-${group}-${tabKey}`}
     tabIndex={0}
-    style={{ display: 'flex', flexDirection: 'column', gap: 'inherit', outline: 'none' }}
+    style={{ display: 'flex', flexDirection: 'column', gap: 'inherit' }}
   >
     {children}
   </div>

@@ -1,3 +1,4 @@
+import { SurfaceStyles } from '../common/SurfaceStyles';
 import { useCallback, useMemo, useState } from 'react';
 import { useTheme } from 'twenty-ui/theme-constants';
 
@@ -101,14 +102,14 @@ const ThreadRow = ({
     alignItems: 'center',
     gap: theme.spacing[0.5],
     fontSize: theme.font.size.xs,
-    color: theme.font.color.tertiary,
+    color: theme.font.color.secondary,
   };
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      aria-label={name}
+      aria-label={[name, (thread.unreadCount ?? 0) > 0 ? `${thread.unreadCount} ${t('inbox.unread')}` : null, thread.lastMessagePreview].filter(Boolean).join(' · ')}
       aria-current={selected}
       style={{
         display: 'flex',
@@ -142,7 +143,7 @@ const ThreadRow = ({
           {name === '' ? displayPhone(thread.waId) : name}
         </span>
         <span style={{ flex: '1 1 auto' }} />
-        <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}>
+        <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
           {relativeTime(thread.lastMessageAt, now, lang)}
         </span>
       </span>
@@ -153,7 +154,7 @@ const ThreadRow = ({
           alignItems: 'center',
           gap: theme.spacing[1],
           fontSize: theme.font.size.sm,
-          color: theme.font.color.tertiary,
+          color: theme.font.color.secondary,
           overflow: 'hidden',
           maxWidth: '100%',
         }}
@@ -378,7 +379,10 @@ export const InboxView = () => {
       const target = event.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase() ?? '';
 
+      if (event.defaultPrevented || target?.isContentEditable) return;
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      // Shortcuts belong to the list; never navigate away while using chat controls.
+      if (target?.closest?.('.wa-inbox-detail')) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       const ids = visible.map((thread) => thread.id);
@@ -404,11 +408,11 @@ export const InboxView = () => {
     [assignToMe, canSend, selectedId, visible],
   );
 
-  const shown = showAllFilters ? FILTERS : FILTERS.filter((key) => PRIMARY.includes(key));
+  const shown = showAllFilters ? FILTERS : FILTERS.filter((key) => PRIMARY.includes(key) || key === filter);
 
   return (
     <div
-      className="wa-inbox"
+      className="wa-surface wa-inbox"
       data-detail={selectedId === null ? 'closed' : 'open'}
       data-list={listCollapsed ? 'collapsed' : 'expanded'}
       {...feed.rootProps}
@@ -438,6 +442,7 @@ export const InboxView = () => {
         overflow: 'hidden',
       }}
     >
+      <SurfaceStyles />
       <style>{layoutCss(theme.border.color.light)}</style>
 
       {/* Renders nothing; polls `mine` and raises the snackbars (D-10 layer 2). */}
@@ -540,7 +545,7 @@ export const InboxView = () => {
                   flex: '1 1 auto',
                   minWidth: 0,
                   border: 'none',
-                  outline: 'none',
+
                   background: 'transparent',
                   color: theme.font.color.primary,
                   fontFamily: theme.font.family,
@@ -562,7 +567,7 @@ export const InboxView = () => {
                     minHeight: '24px',
                     border: 'none',
                     background: 'transparent',
-                    color: theme.font.color.tertiary,
+                    color: theme.font.color.secondary,
                     cursor: 'pointer',
                   }}
                 >
@@ -611,7 +616,7 @@ export const InboxView = () => {
 
             {search === '' ? null : (
               <span
-                style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}
+                style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}
               >
                 {t('inbox.searchScope', { count: threads.length })}
               </span>
@@ -638,7 +643,7 @@ export const InboxView = () => {
                 gap: theme.spacing[1],
                 padding: theme.spacing[2],
                 fontSize: theme.font.size.xs,
-                color: theme.font.color.tertiary,
+                color: theme.font.color.secondary,
                 borderBottom: `1px solid ${theme.border.color.light}`,
               }}
             >
@@ -667,7 +672,7 @@ export const InboxView = () => {
               style={{
                 padding: theme.spacing[4],
                 textAlign: 'center',
-                color: theme.font.color.tertiary,
+                color: theme.font.color.secondary,
                 fontSize: theme.font.size.md,
               }}
             >
@@ -729,7 +734,7 @@ export const InboxView = () => {
               style={{
                 padding: theme.spacing[2],
                 fontSize: theme.font.size.xs,
-                color: theme.font.color.tertiary,
+                color: theme.font.color.secondary,
               }}
             >
               {t('inbox.keyboardHint')}
@@ -787,7 +792,7 @@ export const InboxView = () => {
                 minHeight: '32px',
                 border: 'none',
                 background: 'transparent',
-                color: theme.font.color.tertiary,
+                color: theme.font.color.secondary,
                 cursor: 'pointer',
                 fontFamily: theme.font.family,
                 fontSize: theme.font.size.sm,
@@ -810,6 +815,7 @@ export const InboxView = () => {
               (D-64).
             */
             <ThreadView
+          key={selectedId}
               threadId={selectedId}
               variant="inbox"
               onThreadChanged={refreshList}
@@ -878,7 +884,7 @@ const FilterChip = ({
       <Glyph name={icon} />
       {label}
       {count === undefined ? null : (
-        <span aria-hidden="true" style={{ color: theme.font.color.tertiary }}>
+        <span aria-hidden="true" style={{ color: theme.font.color.secondary }}>
           {count}
         </span>
       )}

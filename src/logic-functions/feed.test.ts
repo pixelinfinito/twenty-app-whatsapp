@@ -144,6 +144,8 @@ const fakeClient = {
   },
 };
 
+vi.mock('../server/metadata-ids', () => ({ resolveFieldMetadataId: vi.fn(async (_object: string, field: string) => field === 'mediaFile' ? 'message-upload-field' : 'campaign-upload-field') }));
+
 vi.mock('../server/repositories/base', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../server/repositories/base')>()),
   query: async (build: (client: unknown) => Promise<unknown>) => build(fakeClient),
@@ -948,5 +950,15 @@ describe('scope=campaign', () => {
     seedAccount();
 
     expect(await call({ scope: 'campaign', id: 'nope' })).toMatchObject({ status: 404 });
+  });
+});
+
+describe('native upload targets', () => {
+  it('returns message upload metadata IDs to agents and campaign targets only to admins', async () => {
+    const agent = await call({ scope: 'bootstrap' });
+    expect(agent.body.uploadTargets).toEqual({ messageMediaFieldMetadataId: 'message-upload-field', campaignHeaderMediaFieldMetadataId: null });
+    caller = { ...caller, isAdmin: true };
+    const admin = await call({ scope: 'bootstrap' });
+    expect(admin.body.uploadTargets.campaignHeaderMediaFieldMetadataId).toBe('campaign-upload-field');
   });
 });

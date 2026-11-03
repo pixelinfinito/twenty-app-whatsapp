@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  handler,
   listSendableTemplatesInputSchema,
   parameterContractForTemplate,
 } from './wa-list-sendable-templates-tool';
@@ -57,5 +58,11 @@ describe('whatsapp-list-sendable-templates MCP tool', () => {
       header: { kind: 'media', mediaType: 'IMAGE' },
       buttons: [{ index: 0, kind: 'url', required: true }],
     });
+  });
+});
+
+it('preserves the discovery denial envelope when delegation is unavailable', async () => {
+  expect(await handler({ personId: '33e0a280-8586-4fc4-ae76-ddcd56d420ce' })).toMatchObject({
+    status: 'denied', reason: 'PLATFORM_UPGRADE_REQUIRED', templates: [],
   });
 });

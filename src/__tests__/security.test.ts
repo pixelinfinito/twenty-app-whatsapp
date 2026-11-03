@@ -1,6 +1,10 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { SystemPermissionFlag } from 'twenty-sdk/define';
+import agentRole from '../roles/whatsapp-agent.role';
+import adminRole from '../roles/whatsapp-admin.role';
+import { OBJ_MESSAGE, OBJ_THREAD } from '../constants/universal-identifiers';
 
 import {
   ACCOUNT_STATUS,
@@ -40,6 +44,25 @@ import {
  */
 
 const SRC = join(process.cwd(), 'src');
+
+it.each([agentRole.config, adminRole.config])('grants $label file access while protecting message and thread writes', (role) => {
+  expect(role.permissionFlagUniversalIdentifiers).toEqual(
+    expect.arrayContaining([SystemPermissionFlag.UPLOAD_FILE, SystemPermissionFlag.DOWNLOAD_FILE]),
+  );
+  expect(role.canUpdateAllObjectRecords).toBe(false);
+  expect(role.canAccessAllTools).toBe(false);
+  expect(role.canBeAssignedToAgents).toBe(true);
+  expect(role.canBeAssignedToApiKeys).toBe(true);
+  expect(role.objectPermissions?.every((entry) => entry.canUpdateObjectRecords === false)).toBe(true);
+  for (const objectUniversalIdentifier of [OBJ_MESSAGE, OBJ_THREAD]) {
+    expect(role.objectPermissions?.find((entry) => entry.objectUniversalIdentifier === objectUniversalIdentifier)).toMatchObject({
+      canReadObjectRecords: true,
+      canUpdateObjectRecords: false,
+      canSoftDeleteObjectRecords: false,
+      canDestroyObjectRecords: false,
+    });
+  }
+});
 const LOGIC_FUNCTIONS = join(SRC, 'logic-functions');
 
 const filesIn = (dir: string): string[] =>
@@ -54,7 +77,11 @@ const filesIn = (dir: string): string[] =>
 const isTestFile = (file: string): boolean =>
   /\.(test|integration-test)\.tsx?$/.test(file) || file.includes('__tests__');
 
-const sourceOf = (file: string): string => readFileSync(file, 'utf8');
+const sourceOf = (file: string): string => {
+  const source = readFileSync(file, 'utf8');
+  const shared = source.match(/import \{ handler \} from '\.\.\/server\/(operation-[^']+)'/);
+  return shared ? `${source}\n${readFileSync(join(SRC, 'server', `${shared[1]}.ts`), 'utf8')}` : source;
+};
 
 // ─── Role matrix ────────────────────────────────────────────────────────────
 
@@ -73,7 +100,6 @@ const ROUTES: Record<
   '/whatsapp/feed': { file: 'wa-inbox-feed-route.ts', minimumRole: 'agent' },
   '/whatsapp/send': { file: 'wa-send-message-route.ts', minimumRole: 'agent' },
   '/whatsapp/thread': { file: 'wa-thread-actions-route.ts', minimumRole: 'agent' },
-  '/whatsapp/upload': { file: 'wa-upload-route.ts', minimumRole: 'agent' },
   '/whatsapp/consent': { file: 'wa-consent-route.ts', minimumRole: 'agent' },
   '/whatsapp/account': { file: 'wa-account-admin-route.ts', minimumRole: 'admin' },
   '/whatsapp/template': { file: 'wa-template-submit.ts', minimumRole: 'admin' },
@@ -165,12 +191,9 @@ describe('the route role matrix (SEC-5)', () => {
     expect(route!.facts.isAuthRequired).toBe(true);
     expect(route!.facts.callsRequireCaller).toBe(true);
 
-    /**
-     * Without the forwarded header the route cannot ask the platform who the
-     * caller is and falls back to a `userWorkspaceId` nothing else joins on —
-     * which is how `/s/*` auth was broken for every human until D-53.
-     */
-    expect(route!.facts.forwardsAuthorization).toBe(true);
+    // Twenty 2.54 forbids forwarding credentials; identity is provided in execution context.
+    expect(route!.facts.forwardsAuthorization).toBe(false);
+    expect(sourceOf(route!.file)).toMatch(/requireCaller\(event, executionContext\)/);
   });
 
   it.each(Object.entries(ROUTES))('%s gates at the reviewed role', (_path, spec) => {

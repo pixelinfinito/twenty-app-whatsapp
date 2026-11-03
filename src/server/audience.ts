@@ -36,7 +36,7 @@ const PERSON_FIELDS = {
     primaryPhoneNumber: true,
     primaryPhoneCallingCode: true,
     primaryPhoneCountryCode: true,
-    additionalPhones: true,
+    additionalPhones: { number: true, callingCode: true, countryCode: true },
   },
   linkedinLink: { primaryLinkUrl: true },
   whatsappOptInStatus: true,

@@ -1,3 +1,4 @@
+import { authenticatedTool, toolTrigger, type WhatsappToolContext } from '../server/tool-runtime';
 import type { InputJsonSchema } from 'twenty-sdk/logic-function';
 import { defineLogicFunction } from 'twenty-sdk/define';
 
@@ -230,7 +231,7 @@ export const runListSendableTemplates = async (input: ListSendableTemplatesInput
   };
 };
 
-export const handler = async (input: ListSendableTemplatesInput) => {
+const executeHandler = async (input: ListSendableTemplatesInput) => {
   try {
     const result = await runListSendableTemplates(input ?? {});
 
@@ -255,12 +256,16 @@ export const handler = async (input: ListSendableTemplatesInput) => {
   }
 };
 
+export const handler = (input: ListSendableTemplatesInput, context?: WhatsappToolContext) =>
+  authenticatedTool(listSendableTemplatesInputSchema, input, context, () => executeHandler(input))
+    .then((result) => result.status === 'denied' && 'code' in result ? { ...result, reason: result.code, templates: [] } : result);
+
 export default defineLogicFunction({
   universalIdentifier: LF_LIST_SENDABLE_TEMPLATES_TOOL,
   name: 'whatsapp-list-sendable-templates',
   description:
     'Lists WhatsApp templates that are currently approved, published and safe to send to one Twenty CRM Person. Call this after uniquely resolving the Person and before whatsapp-send-template. This tool never sends a message.',
   timeoutSeconds: 15,
-  toolTriggerSettings: { inputSchema: listSendableTemplatesInputSchema },
+  toolTriggerSettings: toolTrigger(listSendableTemplatesInputSchema),
   handler,
 });

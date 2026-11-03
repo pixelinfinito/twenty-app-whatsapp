@@ -27,6 +27,7 @@ import {
   IconFileZip,
   IconFilter,
   IconFlask,
+  IconFolder,
   IconForbid,
   IconHeadphones,
   IconHelpCircle,
@@ -141,6 +142,7 @@ export const ICON = {
    */
   photo: IconPhoto,
   document: IconFile,
+  folder: IconFolder,
   voice: IconHeadphones,
   location: IconMap,
   contactCard: IconAddressBook,
@@ -222,33 +224,12 @@ export const DeliveryTicks = ({
   const double =
     status === 'DELIVERED' || status === 'READ' || status === 'PLAYED';
 
+  // Keep glyphs in normal flow: theme icon sizes are unitless CSS variables
+  // in front components, so pixel arithmetic creates a zero-width box.
   return (
-    <span
-      aria-hidden="true"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        // The second tick sits a third of a glyph behind the first, which is
-        // the offset that reads as one mark rather than as two ticks.
-        width: double ? `${size * 1.35}px` : `${size}px`,
-        height: `${size}px`,
-        position: 'relative',
-      }}
-    >
-      <IconCheck
-        size={size}
-        stroke={theme.icon.stroke.md}
-        color={color}
-        style={{ position: 'absolute', left: 0 }}
-      />
-      {double ? (
-        <IconCheck
-          size={size}
-          stroke={theme.icon.stroke.md}
-          color={color}
-          style={{ position: 'absolute', left: `${size * 0.35}px` }}
-        />
-      ) : null}
+    <span aria-hidden="true" style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
+      <IconCheck size={size} stroke={theme.icon.stroke.md} color={color} />
+      {double ? <IconCheck size={size} stroke={theme.icon.stroke.md} color={color} style={{ marginLeft: '-0.5em' }} /> : null}
     </span>
   );
 };

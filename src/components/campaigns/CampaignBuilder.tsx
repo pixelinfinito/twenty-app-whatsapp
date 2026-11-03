@@ -1,10 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from 'twenty-ui/theme-constants';
 
-import type {
-  VariableBinding,
-  VariableMapping,
-} from '../../domain/campaign/variable-resolution';
+import type { VariableBinding, VariableMapping } from '../../domain/campaign/variable-resolution';
 import type { AccountProjection } from '../../domain/feed/projection';
 import {
   buttonVariableHints,
@@ -16,10 +13,13 @@ import type { VariableSpec } from '../../domain/template-spec';
 import { isWorkspaceFileAddress } from '../../domain/workspace-file';
 import type { FeedTemplate } from '../common/use-feed';
 import { useCopy, type Translate } from '../common/copy';
-import { displayPhone } from '../common/format';
+import { browserDateTime, displayPhone } from '../common/format';
 import { Glyph } from '../common/icons';
 import { ActionButton, Banner, Card, Field, useInputStyle } from '../common/ui';
 import { useCampaignActions } from './campaign-actions';
+import { FileUpload } from '../chat/builders/FileUpload';
+import type { SelectedFile } from '../chat/builders/upload';
+import { mediaKindForHeaderFormat } from '../../domain/media-limits';
 
 /**
  * The five-step builder (FR-CAM-1, specs/07 §2).
@@ -53,6 +53,7 @@ import { useCampaignActions } from './campaign-actions';
  */
 
 export type CampaignBuilderProps = {
+  fieldMetadataId?: string | null;
   accounts: AccountProjection[];
   templates: FeedTemplate[];
   /**
@@ -114,7 +115,10 @@ export const standIn = (binding: Binding): string => {
     return binding.value.length > 0 ? binding.value : binding.fallback;
   }
 
-  const leaf = binding.path.split('.').filter((part) => part.length > 0).pop();
+  const leaf = binding.path
+    .split('.')
+    .filter((part) => part.length > 0)
+    .pop();
 
   return leaf === undefined ? '' : `«${leaf}»`;
 };
@@ -150,12 +154,14 @@ export const buildVariableMapping = ({
   bindings,
   headerBindings,
   headerFileUrl,
+  headerFile,
   buttonBindings,
 }: {
   spec: VariableSpec | null;
   bindings: Binding[];
   headerBindings: Binding[];
   headerFileUrl: string;
+  headerFile?: SelectedFile | null;
   buttonBindings: Record<number, Binding>;
 }): VariableMapping => {
   const mediaHeader = mediaHeaderOf(spec);
@@ -182,7 +188,13 @@ export const buildVariableMapping = ({
       ? {
           header: {
             kind: 'media' as const,
-            fileUrl: isWorkspaceFileAddress(headerFileUrl) ? headerFileUrl.trim() : null,
+            ...(headerFile
+              ? {
+                  fileId: headerFile.fileId,
+                  filePath: headerFile.path,
+                  filename: headerFile.filename,
+                }
+              : { fileUrl: isWorkspaceFileAddress(headerFileUrl) ? headerFileUrl.trim() : null }),
           },
         }
       : headerHints.length === 0
@@ -348,7 +360,7 @@ export const openedFrom = (
      * value is a full ISO instant, and handing it over whole leaves the field
      * empty — which reads as "not scheduled" for a campaign that is.
      */
-    scheduledAt: text(campaign.scheduledAt).slice(0, 16),
+    scheduledAt: browserDateTime(text(campaign.scheduledAt)),
     templateId,
     audienceKind: audience?.kind === 'manual' ? 'manual' : 'view',
     viewId: text(audience?.viewId),
@@ -399,7 +411,7 @@ const Preview = ({
           gap: theme.spacing[1],
           fontSize: theme.font.size.sm,
           fontWeight: theme.font.weight.medium,
-          color: theme.font.color.light,
+          color: theme.font.color.secondary,
         }}
       >
         <Glyph name="template" />
@@ -421,14 +433,14 @@ const Preview = ({
         )}
         <div>{rendered.body}</div>
         {rendered.footer === null ? null : (
-          <div style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}>
+          <div style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
             {rendered.footer}
           </div>
         )}
       </div>
 
       {note === undefined ? null : (
-        <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}>
+        <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
           {note}
         </span>
       )}
@@ -445,7 +457,7 @@ const SummaryRow = ({ label, value }: { label: string; value: string }) => {
         style={{
           flex: '0 0 160px',
           fontSize: theme.font.size.sm,
-          color: theme.font.color.tertiary,
+          color: theme.font.color.secondary,
         }}
       >
         {label}
@@ -464,6 +476,7 @@ const SummaryRow = ({ label, value }: { label: string; value: string }) => {
 };
 
 export const CampaignBuilder = ({
+  fieldMetadataId,
   accounts,
   templates,
   resume = null,
@@ -489,6 +502,7 @@ export const CampaignBuilder = ({
   const [step, setStep] = useState(opened.step);
   const [campaignId, setCampaignId] = useState<string | null>(opened.campaignId);
   const [busy, setBusy] = useState(false);
+  const saving = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState(opened.name);
@@ -511,6 +525,8 @@ export const CampaignBuilder = ({
   const [personQuery, setPersonQuery] = useState('');
   const [personResults, setPersonResults] = useState<PickedPerson[]>([]);
   const [personSearching, setPersonSearching] = useState(false);
+  const [personSearchError, setPersonSearchError] = useState(false);
+  const [searchAttempt, setSearchAttempt] = useState(0);
   const [bindings, setBindings] = useState<Binding[]>(opened.bindings);
   /**
    * The rest of the template, which this builder used to ignore (D-59).
@@ -523,13 +539,38 @@ export const CampaignBuilder = ({
    */
   const [headerBindings, setHeaderBindings] = useState<Binding[]>(opened.headerBindings);
   const [headerFileUrl, setHeaderFileUrl] = useState(opened.headerFileUrl);
+  const [headerFile, setHeaderFile] = useState<SelectedFile | null>(() => {
+    const mapping = resume?.variableMapping as VariableMapping | undefined;
+    const header = mapping?.header;
+    const files = resume?.headerMediaFile as
+      { fileId: string; label: string; url?: string }[] | undefined;
+    if (header?.kind !== 'media' || !header.fileId || !header.filePath) return null;
+    return {
+      fileId: header.fileId,
+      path: header.filePath,
+      url: files?.[0]?.url ?? '',
+      filename: header.filename ?? files?.[0]?.label ?? 'Header media',
+      size: 0,
+      mimeType: '',
+      mediaKind:
+        mediaKindForHeaderFormat(
+          mediaHeaderOf(specOf(templates.find((entry) => entry.id === opened.templateId)))?.format,
+        ) ?? 'document',
+    };
+  });
   const [buttonBindings, setButtonBindings] = useState<Record<number, Binding>>(
     opened.buttonBindings,
   );
 
+  const [optionsError, setOptionsError] = useState(false);
+  const [optionsAttempt, setOptionsAttempt] = useState(0);
   const [views, setViews] = useState<{ id: string; name: string }[]>([]);
   const [paths, setPaths] = useState<string[]>([]);
   const [sample, setSample] = useState<PreviewRow[] | null>(null);
+  const [sampleError, setSampleError] = useState(false);
+  const sampleRequest = useRef(0);
+  useEffect(() => () => { sampleRequest.current += 1; }, []);
+  const scheduleValid = scheduledAt === '' || (Number.isFinite(Date.parse(scheduledAt)) && Date.parse(scheduledAt) > Date.now());
 
   /**
    * Campaigns may only use marketing and utility templates. Authentication ones
@@ -560,25 +601,27 @@ export const CampaignBuilder = ({
   const mediaHeader = useMemo(() => mediaHeaderOf(spec), [spec]);
   const buttonHints = useMemo(() => buttonVariableHints(spec), [spec]);
 
-  const headerFileValid = isWorkspaceFileAddress(headerFileUrl);
+  const headerFileValid = headerFile !== null || isWorkspaceFileAddress(headerFileUrl);
 
   /** Whether the variables step has anything at all to ask for. */
   const hasVariables =
-    labels.length > 0 ||
-    headerHints.length > 0 ||
-    mediaHeader !== null ||
-    buttonHints.length > 0;
+    labels.length > 0 || headerHints.length > 0 || mediaHeader !== null || buttonHints.length > 0;
 
   useEffect(() => {
+    let active = true;
+    setOptionsError(false);
     void call<{ views: { id: string; name: string }[]; bindingPaths: string[] }>(
       'audienceOptions',
     ).then((result) => {
+      if (!active) return;
+      setOptionsError(!result.ok);
       if (result.ok) {
         setViews(result.data.views);
         setPaths(result.data.bindingPaths);
       }
     });
-  }, [call]);
+    return () => { active = false; };
+  }, [call, optionsAttempt]);
 
   /**
    * A reopened draft stored ids; the picker owes the operator names. One read,
@@ -609,6 +652,9 @@ export const CampaignBuilder = ({
    */
   useEffect(() => {
     const term = personQuery.trim();
+    let active = true;
+    setPersonSearchError(false);
+    setPersonResults([]);
 
     if (term.length < 2) {
       setPersonResults([]);
@@ -620,16 +666,16 @@ export const CampaignBuilder = ({
     setPersonSearching(true);
 
     const timer = setTimeout(() => {
-      void call<{ people: PickedPerson[] }>('personSearch', { query: term }).then(
-        (result) => {
-          setPersonSearching(false);
-          if (result.ok) setPersonResults(result.data.people);
-        },
-      );
+      void call<{ people: PickedPerson[] }>('personSearch', { query: term }).then((result) => {
+        if (!active) return;
+        setPersonSearching(false);
+        setPersonSearchError(!result.ok);
+        if (result.ok) setPersonResults(result.data.people);
+      });
     }, 300);
 
-    return () => clearTimeout(timer);
-  }, [call, personQuery]);
+    return () => { active = false; clearTimeout(timer); };
+  }, [call, personQuery, searchAttempt]);
 
   // One binding row per placeholder, kept in step with the chosen template.
   useEffect(() => {
@@ -664,9 +710,10 @@ export const CampaignBuilder = ({
         bindings,
         headerBindings,
         headerFileUrl,
+        headerFile,
         buttonBindings,
       }),
-    [bindings, spec, headerFileUrl, headerBindings, buttonBindings],
+    [bindings, spec, headerFileUrl, headerFile, headerBindings, buttonBindings],
   );
 
   /** The template as it stands, with whatever the mapping can stand in for. */
@@ -687,7 +734,9 @@ export const CampaignBuilder = ({
   );
 
   const persist = useCallback(
-    async (patch: Record<string, unknown>): Promise<boolean> => {
+    async (patch: Record<string, unknown>): Promise<string | null> => {
+      if (saving.current) return null;
+      saving.current = true;
       setBusy(true);
       setError(null);
 
@@ -696,12 +745,13 @@ export const CampaignBuilder = ({
           ? await call<{ campaign?: { id?: string } }>('create', patch)
           : await call('update', { campaignId, ...patch });
 
+      saving.current = false;
       setBusy(false);
 
       if (!result.ok) {
         setError(result.error);
 
-        return false;
+        return null;
       }
 
       if (campaignId === null) {
@@ -711,13 +761,14 @@ export const CampaignBuilder = ({
         if (id === null) {
           setError(t('campaign.createdNoId'));
 
-          return false;
+          return null;
         }
 
         setCampaignId(id);
+        return id;
       }
 
-      return true;
+      return campaignId;
     },
     [call, campaignId, t],
   );
@@ -732,17 +783,23 @@ export const CampaignBuilder = ({
    */
   const loadSample = useCallback(
     async (id: string) => {
+      const request = ++sampleRequest.current;
+      setSampleError(false);
       const result = await call<{ rows: PreviewRow[] }>('preview', {
         campaignId: id,
         sampleSize: PREVIEW_SAMPLE,
       });
 
+      if (request !== sampleRequest.current) return;
+      setSampleError(!result.ok);
       setSample(result.ok ? result.data.rows : []);
     },
     [call],
   );
 
   const next = useCallback(async () => {
+    if (saving.current) return;
+    if (!scheduleValid) { setError(t('campaign.scheduleInvalid')); return; }
     // Step 0 is not written: `create` needs the template that step 1 chooses.
     if (step === 0) {
       setStep(1);
@@ -755,7 +812,7 @@ export const CampaignBuilder = ({
         name,
         accountId,
         templateId,
-        ...(scheduledAt === '' ? {} : { scheduledAt: new Date(scheduledAt).toISOString() }),
+        scheduledAt: scheduledAt === '' ? null : new Date(scheduledAt).toISOString(),
       },
       2: { audienceDefinition },
       3: { variableMapping },
@@ -778,18 +835,22 @@ export const CampaignBuilder = ({
     name,
     persist,
     scheduledAt,
+    scheduleValid,
+    t,
     step,
     templateId,
     variableMapping,
   ]);
 
   const build = useCallback(async () => {
-    if (campaignId === null) return;
-
+    if (campaignId === null || saving.current) return;
+    saving.current = true;
+    setError(null);
     setBusy(true);
 
     const result = await call('build', { campaignId });
 
+    saving.current = false;
     setBusy(false);
 
     if (!result.ok) {
@@ -801,9 +862,18 @@ export const CampaignBuilder = ({
     onDone(campaignId);
   }, [call, campaignId, onDone]);
 
+  const saveDraft = async () => {
+    if (!scheduleValid) { setError(t('campaign.scheduleInvalid')); return; }
+    const id = await persist({
+      name, accountId, templateId, audienceDefinition, variableMapping,
+      scheduledAt: scheduledAt === '' ? null : new Date(scheduledAt).toISOString(),
+    });
+    if (id) onDone(id);
+  };
+
   const canAdvance =
     step === 0
-      ? name.trim().length > 0 && accountId !== ''
+      ? name.trim().length > 0 && accountId !== '' && scheduleValid
       : step === 1
         ? templateId !== ''
         : step === 2
@@ -921,14 +991,14 @@ export const CampaignBuilder = ({
         {STEPS.map((key, index) => (
           <span
             key={key}
+            aria-current={index === step ? 'step' : undefined}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: theme.spacing[1],
               fontSize: theme.font.size.md,
-              color: index === step ? theme.font.color.primary : theme.font.color.tertiary,
-              fontWeight:
-                index === step ? theme.font.weight.semiBold : theme.font.weight.regular,
+              color: index === step ? theme.font.color.primary : theme.font.color.secondary,
+              fontWeight: index === step ? theme.font.weight.semiBold : theme.font.weight.regular,
             }}
           >
             <span
@@ -941,10 +1011,8 @@ export const CampaignBuilder = ({
                 height: '20px',
                 borderRadius: theme.border.radius.rounded,
                 fontSize: theme.font.size.sm,
-                background:
-                  index === step ? theme.color.blue : theme.background.transparent.light,
-                color:
-                  index === step ? theme.font.color.inverted : theme.font.color.tertiary,
+                background: index === step ? theme.color.blue : theme.background.transparent.light,
+                color: index === step ? theme.font.color.inverted : theme.font.color.secondary,
               }}
             >
               {index < step ? <Glyph name="completed" /> : index + 1}
@@ -955,7 +1023,14 @@ export const CampaignBuilder = ({
       </div>
 
       {error === null ? null : <Banner tone="danger">{error}</Banner>}
+      {optionsError ? (
+        <Banner tone="danger">
+          {t('campaign.optionsFailed')}
+          <ActionButton label={t('common.retry')} icon="retry" onClick={() => setOptionsAttempt((attempt) => attempt + 1)} />
+        </Banner>
+      ) : null}
 
+      <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <Card title={t(STEPS[step])}>
         {step === 0 ? (
           <>
@@ -980,11 +1055,12 @@ export const CampaignBuilder = ({
                 ))}
               </select>
             </Field>
-            <Field label={t('campaign.schedule')} hint={t('campaign.scheduleHint')}>
+            <Field label={t('campaign.schedule')} hint={t('campaign.scheduleHint')} error={scheduleValid ? undefined : t('campaign.scheduleInvalid')}>
               <input
                 type="datetime-local"
                 value={scheduledAt}
                 onChange={(event) => setScheduledAt(event.target.value)}
+                onInput={(event) => setScheduledAt(event.currentTarget.value)}
                 style={input}
               />
             </Field>
@@ -996,7 +1072,11 @@ export const CampaignBuilder = ({
             <Field label={t('campaign.step.template')} hint={t('campaign.templateHint')}>
               <select
                 value={templateId}
-                onChange={(event) => setTemplateId(event.target.value)}
+                onChange={(event) => {
+                  setTemplateId(event.target.value);
+                  setHeaderFile(null);
+                  setHeaderFileUrl('');
+                }}
                 style={input}
               >
                 <option value="">—</option>
@@ -1009,11 +1089,7 @@ export const CampaignBuilder = ({
             </Field>
 
             {localPreview === null ? null : (
-              <Preview
-                rendered={localPreview}
-                note={t('campaign.previewPlaceholders')}
-                t={t}
-              />
+              <Preview rendered={localPreview} note={t('campaign.previewPlaceholders')} t={t} />
             )}
           </>
         ) : null}
@@ -1066,16 +1142,17 @@ export const CampaignBuilder = ({
                   />
                 </Field>
 
-                {personSearching ? (
-                  <span
-                    style={{ fontSize: theme.font.size.sm, color: theme.font.color.tertiary }}
-                  >
+                {personSearchError ? (
+                  <Banner tone="danger">
+                    {t('campaign.searchFailed')}
+                    <ActionButton label={t('common.retry')} icon="retry" onClick={() => setSearchAttempt((attempt) => attempt + 1)} />
+                  </Banner>
+                ) : personSearching ? (
+                  <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.secondary }}>
                     {t('common.loading')}
                   </span>
                 ) : personQuery.trim().length >= 2 && personResults.length === 0 ? (
-                  <span
-                    style={{ fontSize: theme.font.size.sm, color: theme.font.color.tertiary }}
-                  >
+                  <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.secondary }}>
                     {t('campaign.personNoResults', { query: personQuery.trim() })}
                   </span>
                 ) : (
@@ -1102,9 +1179,7 @@ export const CampaignBuilder = ({
                           border: 'none',
                           borderRadius: theme.border.radius.sm,
                           background: 'transparent',
-                          color: already
-                            ? theme.font.color.light
-                            : theme.font.color.secondary,
+                          color: already ? theme.font.color.secondary : theme.font.color.secondary,
                           cursor: already ? 'default' : 'pointer',
                           fontFamily: theme.font.family,
                           fontSize: theme.font.size.sm,
@@ -1124,7 +1199,7 @@ export const CampaignBuilder = ({
                     style={{
                       fontSize: theme.font.size.sm,
                       fontWeight: theme.font.weight.medium,
-                      color: theme.font.color.light,
+                      color: theme.font.color.secondary,
                     }}
                   >
                     {t('campaign.personSelected', { count: selectedPeople.length })}
@@ -1141,9 +1216,7 @@ export const CampaignBuilder = ({
                         color: theme.font.color.secondary,
                       }}
                     >
-                      <span style={{ flex: '1 1 auto', minWidth: 0 }}>
-                        {pickedLabel(person)}
-                      </span>
+                      <span style={{ flex: '1 1 auto', minWidth: 0 }}>{pickedLabel(person)}</span>
                       <button
                         type="button"
                         onClick={() =>
@@ -1162,7 +1235,7 @@ export const CampaignBuilder = ({
                           border: 'none',
                           borderRadius: theme.border.radius.sm,
                           background: 'transparent',
-                          color: theme.font.color.tertiary,
+                          color: theme.font.color.secondary,
                           cursor: 'pointer',
                         }}
                       >
@@ -1179,7 +1252,7 @@ export const CampaignBuilder = ({
         {step === 3 ? (
           <>
             {hasVariables ? null : (
-              <span style={{ fontSize: theme.font.size.md, color: theme.font.color.tertiary }}>
+              <span style={{ fontSize: theme.font.size.md, color: theme.font.color.secondary }}>
                 {t('campaign.noVariables')}
               </span>
             )}
@@ -1195,22 +1268,28 @@ export const CampaignBuilder = ({
             */}
             {mediaHeader === null ? null : (
               <Card title={t(`chat.templateHeader.${mediaHeader.format}`)}>
-                <Field
-                  label={t('chat.templateHeaderMedia')}
-                  hint={t('chat.fileUrlHint')}
-                  {...(headerFileUrl.length === 0 || headerFileValid
-                    ? {}
-                    : { error: t('builder.error.NOT_A_FILE_URL') })}
-                >
-                  <input
-                    type="text"
-                    inputMode="url"
-                    value={headerFileUrl}
-                    placeholder={t('chat.fileUrlPlaceholder')}
-                    onChange={(event) => setHeaderFileUrl(event.target.value)}
-                    style={input}
-                  />
-                </Field>
+                {headerFile === null && headerFileValid ? (
+                  <div>
+                    <p>{headerFileUrl.split('/').pop()?.split('?')[0]}</p>
+                    <ActionButton
+                      label={t('upload.remove')}
+                      onClick={() => setHeaderFileUrl('')}
+                      disabled={busy}
+                    />
+                  </div>
+                ) : null}
+                <FileUpload
+                  key={templateId}
+                  t={t}
+                  fieldMetadataId={fieldMetadataId}
+                  value={headerFile}
+                  requiredKind={mediaKindForHeaderFormat(mediaHeader.format) ?? 'document'}
+                  disabled={busy}
+                  onChange={(file) => {
+                    setHeaderFile(file);
+                    setHeaderFileUrl('');
+                  }}
+                />
               </Card>
             )}
 
@@ -1312,14 +1391,12 @@ export const CampaignBuilder = ({
             />
 
             {warnings.length === 0 ? null : (
-              <div
-                style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[1] }}
-              >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[1] }}>
                 <span
                   style={{
                     fontSize: theme.font.size.sm,
                     fontWeight: theme.font.weight.medium,
-                    color: theme.font.color.light,
+                    color: theme.font.color.secondary,
                   }}
                 >
                   {t('campaign.reviewWarnings')}
@@ -1345,8 +1422,15 @@ export const CampaignBuilder = ({
               </div>
             )}
 
-            {sample === null ? (
-              <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.tertiary }}>
+            {sampleError ? (
+              <Banner tone="danger">
+                {t('campaign.previewFailed')}
+                <ActionButton label={t('common.retry')} icon="retry" onClick={() => {
+                  if (campaignId) { setSampleError(false); setSample(null); void loadSample(campaignId); }
+                }} />
+              </Banner>
+            ) : sample === null ? (
+              <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.secondary }}>
                 {t('common.loading')}
               </span>
             ) : sample.length === 0 ? (
@@ -1364,8 +1448,7 @@ export const CampaignBuilder = ({
                     name:
                       [sample[0].name, displayPhone(sample[0].phone)]
                         .filter(
-                          (part): part is string =>
-                            typeof part === 'string' && part.length > 0,
+                          (part): part is string => typeof part === 'string' && part.length > 0,
                         )
                         .join(' · ') ||
                       (sample[0].personId ?? '?'),
@@ -1398,9 +1481,7 @@ export const CampaignBuilder = ({
                     : t('campaign.reviewMissing', {
                         count: missingRows.length,
                         total: sample.length,
-                        keys: [
-                          ...new Set(missingRows.flatMap((row) => row.missing)),
-                        ].join(', '),
+                        keys: [...new Set(missingRows.flatMap((row) => row.missing))].join(', '),
                       })}
                 </span>
               </>
@@ -1410,6 +1491,7 @@ export const CampaignBuilder = ({
           </>
         ) : null}
       </Card>
+      </fieldset>
 
       {/*
         Sticky, because the Variables step is as long as the template has
@@ -1422,6 +1504,7 @@ export const CampaignBuilder = ({
           display: 'flex',
           alignItems: 'center',
           gap: theme.spacing[2],
+          flexWrap: 'wrap',
           position: 'sticky',
           bottom: 0,
           background: theme.background.primary,
@@ -1433,14 +1516,18 @@ export const CampaignBuilder = ({
           <ActionButton
             label={t('common.back')}
             icon="back"
-            onClick={() => setStep((current) => current - 1)}
+            disabled={busy}
+            onClick={() => { sampleRequest.current += 1; setError(null); setStep((current) => current - 1); }}
           />
         ) : null}
-        <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}>
+        <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
           {t('campaign.stepOf', { step: step + 1, total: STEPS.length })}
         </span>
         <span style={{ flex: '1 1 auto' }} />
-        <ActionButton label={t('common.cancel')} onClick={onCancel} />
+        <ActionButton label={t('common.cancel')} disabled={busy} onClick={onCancel} />
+        {name.trim() && accountId && templateId ? (
+          <ActionButton label={t('campaign.saveDraft')} busy={busy} onClick={() => void saveDraft()} />
+        ) : null}
         {step < REVIEW_STEP ? (
           <ActionButton
             label={t('common.continue')}

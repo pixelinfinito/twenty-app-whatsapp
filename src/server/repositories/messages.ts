@@ -168,6 +168,7 @@ export const findNewestInboundWamid = async (
 };
 
 export type MessageCreateInput = {
+  mediaFile?: FileItemInput[];
   threadId: string;
   wamid?: string | null;
   direction: Direction;

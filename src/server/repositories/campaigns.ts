@@ -22,6 +22,7 @@ const CAMPAIGN_FIELDS = {
   completedAt: true,
   audienceDefinition: true,
   variableMapping: true,
+  headerMediaFile: { fileId: true, label: true, url: true },
   recipientCount: true,
   excludedCount: true,
   exclusionBreakdown: true,
@@ -55,6 +56,7 @@ export type WhatsappCampaignRecord = {
   completedAt?: string | null;
   audienceDefinition?: JsonObject | null;
   variableMapping?: JsonObject | null;
+  headerMediaFile?: { fileId: string; label: string; url?: string }[] | null;
   recipientCount?: number | null;
   excludedCount?: number | null;
   exclusionBreakdown?: JsonObject | null;
@@ -211,6 +213,7 @@ export type CampaignPatch = {
   scheduledAt?: string | null;
   audienceDefinition?: Record<string, unknown> | null;
   variableMapping?: Record<string, unknown> | null;
+  headerMediaFile?: { fileId: string; label: string }[];
   recipientCount?: number;
   excludedCount?: number;
   exclusionBreakdown?: Record<string, unknown> | null;

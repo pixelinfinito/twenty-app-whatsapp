@@ -30,13 +30,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Deploy
-        uses: twentyhq/twenty/.github/actions/deploy-twenty-app@044fc2d38908f711f5f073c345b656e13b541b8b # main 2026-08-16
+        uses: twentyhq/twenty/.github/actions/deploy-twenty-app@c75ef7bfd0589219bd22e8f134df458af0af3445 # twenty/v2.54.0
         with:
           api-url: ${{ env.TWENTY_DEPLOY_URL }}
           api-key: ${{ secrets.TWENTY_DEPLOY_API_KEY }}
 
       - name: Install
-        uses: twentyhq/twenty/.github/actions/install-twenty-app@044fc2d38908f711f5f073c345b656e13b541b8b # main 2026-08-16
+        uses: twentyhq/twenty/.github/actions/install-twenty-app@c75ef7bfd0589219bd22e8f134df458af0af3445 # twenty/v2.54.0
         with:
           api-url: ${{ env.TWENTY_DEPLOY_URL }}
           api-key: ${{ secrets.TWENTY_DEPLOY_API_KEY }}

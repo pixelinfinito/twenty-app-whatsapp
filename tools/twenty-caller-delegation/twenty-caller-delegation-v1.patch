@@ -1,0 +1,1073 @@
+diff --git a/packages/twenty-sdk/src/sdk/logic-function/index.ts b/packages/twenty-sdk/src/sdk/logic-function/index.ts
+index 8c85e1df..223c8584 100644
+--- a/packages/twenty-sdk/src/sdk/logic-function/index.ts
++++ b/packages/twenty-sdk/src/sdk/logic-function/index.ts
+@@ -40,6 +40,7 @@ export {
+   RetryableLogicFunctionError,
+   type InputJsonSchema,
+   type LogicFunctionExecutionContext,
++  type ToolCaller,
+ } from 'twenty-shared/logic-function';
+ 
+ export { getConnection } from '@/sdk/logic-function/connections/get-connection';
+diff --git a/packages/twenty-server/@types/express.d.ts b/packages/twenty-server/@types/express.d.ts
+index f945b0cd..807fc3b2 100644
+--- a/packages/twenty-server/@types/express.d.ts
++++ b/packages/twenty-server/@types/express.d.ts
+@@ -16,6 +16,7 @@ declare module 'express-serve-static-core' {
+     apiKey?: FlatApiKey | null;
+     application?: FlatApplication | null;
+     agentId?: string;
++    toolCallerDelegation?: true;
+     userWorkspace?: FlatUserWorkspace;
+     locale: keyof typeof APP_LOCALES;
+     workspace?: FlatWorkspace;
+diff --git a/packages/twenty-server/src/engine/api/mcp/services/mcp-protocol.service.ts b/packages/twenty-server/src/engine/api/mcp/services/mcp-protocol.service.ts
+index d02ae59a..24cf5a2e 100644
+--- a/packages/twenty-server/src/engine/api/mcp/services/mcp-protocol.service.ts
++++ b/packages/twenty-server/src/engine/api/mcp/services/mcp-protocol.service.ts
+@@ -313,6 +313,8 @@ export class McpProtocolService {
+       [GET_TOOL_CATALOG_TOOL_NAME]: {
+         ...createGetToolCatalogTool(this.toolRegistry, workspace.id, {
+           rolePermissionConfig,
++          authContext: options?.authContext,
++          agentId: options?.agentId,
+           userId: options?.userId,
+           userWorkspaceId: options?.userWorkspaceId,
+           excludeTools: MCP_EXCLUDED_TOOL_NAMES,
+diff --git a/packages/twenty-server/src/engine/core-modules/auth/strategies/jwt.auth.strategy.ts b/packages/twenty-server/src/engine/core-modules/auth/strategies/jwt.auth.strategy.ts
+index 2dde059c..159cf25c 100644
+--- a/packages/twenty-server/src/engine/core-modules/auth/strategies/jwt.auth.strategy.ts
++++ b/packages/twenty-server/src/engine/core-modules/auth/strategies/jwt.auth.strategy.ts
+@@ -356,7 +356,11 @@ export class JwtAuthStrategy extends PassportStrategy(Strategy, 'jwt') {
+       );
+     }
+ 
+-    const context: RawAuthContext = { application, workspace };
++    const context: RawAuthContext = {
++      application,
++      workspace,
++      ...(payload.toolCallerDelegation ? { toolCallerDelegation: true } : {}),
++    };
+ 
+     if (isDefined(payload.agentId)) {
+       context.agentId = payload.agentId;
+diff --git a/packages/twenty-server/src/engine/core-modules/auth/token/services/application-token.service.ts b/packages/twenty-server/src/engine/core-modules/auth/token/services/application-token.service.ts
+index 154deb0d..94506bc2 100644
+--- a/packages/twenty-server/src/engine/core-modules/auth/token/services/application-token.service.ts
++++ b/packages/twenty-server/src/engine/core-modules/auth/token/services/application-token.service.ts
+@@ -48,6 +48,7 @@ export class ApplicationTokenService {
+     userWorkspaceId,
+     userId,
+     agentId,
++    toolCallerDelegation,
+     expiresIn,
+   }: {
+     workspaceId: string;
+@@ -55,6 +56,7 @@ export class ApplicationTokenService {
+     userWorkspaceId?: string;
+     userId?: string;
+     agentId?: string;
++    toolCallerDelegation?: true;
+     expiresIn?: string;
+   }): Promise<AuthToken> {
+     await this.validateWorkspaceAndApplication(workspaceId, applicationId);
+@@ -65,6 +67,7 @@ export class ApplicationTokenService {
+       userWorkspaceId,
+       userId,
+       agentId,
++      toolCallerDelegation,
+       tokenType: JwtTokenTypeEnum.APPLICATION_ACCESS,
+       expiresIn:
+         expiresIn ??
+@@ -273,8 +276,7 @@ export class ApplicationTokenService {
+   }
+ 
+   decodeToken(token: string): (
+-    | ApplicationAccessTokenJwtPayload
+-    | ApplicationRefreshTokenJwtPayload
++    ApplicationAccessTokenJwtPayload | ApplicationRefreshTokenJwtPayload
+   ) & {
+     exp?: number;
+     iat?: number;
+@@ -328,6 +330,7 @@ export class ApplicationTokenService {
+     userWorkspaceId,
+     userId,
+     agentId,
++    toolCallerDelegation,
+     tokenType,
+     expiresIn,
+     workspaceDeletionRequestTimestamp,
+@@ -337,6 +340,7 @@ export class ApplicationTokenService {
+     userWorkspaceId?: string;
+     userId?: string;
+     agentId?: string;
++    toolCallerDelegation?: true;
+     tokenType:
+       | JwtTokenTypeEnum.APPLICATION_ACCESS
+       | JwtTokenTypeEnum.APPLICATION_REFRESH;
+@@ -346,8 +350,7 @@ export class ApplicationTokenService {
+     const expiresAt = addMilliseconds(new Date().getTime(), ms(expiresIn));
+ 
+     const jwtPayload:
+-      | ApplicationAccessTokenJwtPayload
+-      | ApplicationRefreshTokenJwtPayload = {
++      ApplicationAccessTokenJwtPayload | ApplicationRefreshTokenJwtPayload = {
+       sub: applicationId,
+       applicationId,
+       workspaceId,
+@@ -358,6 +361,7 @@ export class ApplicationTokenService {
+       ...(userWorkspaceId ? { userWorkspaceId } : {}),
+       ...(userId ? { userId } : {}),
+       ...(agentId ? { agentId } : {}),
++      ...(toolCallerDelegation ? { toolCallerDelegation } : {}),
+     };
+ 
+     return {
+diff --git a/packages/twenty-server/src/engine/core-modules/auth/types/application-access-token-jwt-payload.type.ts b/packages/twenty-server/src/engine/core-modules/auth/types/application-access-token-jwt-payload.type.ts
+index 153e6150..52b053d4 100644
+--- a/packages/twenty-server/src/engine/core-modules/auth/types/application-access-token-jwt-payload.type.ts
++++ b/packages/twenty-server/src/engine/core-modules/auth/types/application-access-token-jwt-payload.type.ts
+@@ -9,5 +9,6 @@ export type ApplicationAccessTokenJwtPayload = CommonPropertiesJwtPayload & {
+   userId?: string;
+   // narrows the token's roles to the agent's; never a caller of its own
+   agentId?: string;
++  toolCallerDelegation?: true;
+   workspaceDeletionRequestTimestamp?: string;
+ };
+diff --git a/packages/twenty-server/src/engine/core-modules/auth/types/raw-auth-context.type.ts b/packages/twenty-server/src/engine/core-modules/auth/types/raw-auth-context.type.ts
+index 3e5203d7..fd98ffa4 100644
+--- a/packages/twenty-server/src/engine/core-modules/auth/types/raw-auth-context.type.ts
++++ b/packages/twenty-server/src/engine/core-modules/auth/types/raw-auth-context.type.ts
+@@ -15,6 +15,7 @@ export type RawAuthContext = {
+   workspace?: FlatWorkspace;
+   application?: FlatApplication | null | undefined;
+   agentId?: string;
++  toolCallerDelegation?: true;
+   userWorkspaceId?: string;
+   userWorkspace?: FlatUserWorkspace;
+   authProvider?: AuthProviderEnum;
+diff --git a/packages/twenty-server/src/engine/core-modules/logic-function/logic-function-executor/constants/engine-injected-env-variable-names.constant.ts b/packages/twenty-server/src/engine/core-modules/logic-function/logic-function-executor/constants/engine-injected-env-variable-names.constant.ts
+index 694832bc..878ae9fd 100644
+--- a/packages/twenty-server/src/engine/core-modules/logic-function/logic-function-executor/constants/engine-injected-env-variable-names.constant.ts
++++ b/packages/twenty-server/src/engine/core-modules/logic-function/logic-function-executor/constants/engine-injected-env-variable-names.constant.ts
+@@ -8,6 +8,7 @@ import {
+ } from 'twenty-shared/application-runtime';
+ 
+ export const ENGINE_INJECTED_ENV_VARIABLE_NAMES = new Set<string>([
++  'TWENTY_TOOL_CALLER_ACCESS_TOKEN',
+   DEFAULT_API_URL_NAME,
+   DEFAULT_APP_ACCESS_TOKEN_NAME,
+   DEFAULT_APP_APPLICATION_ACCESS_TOKEN_NAME,
+diff --git a/packages/twenty-server/src/engine/core-modules/logic-function/logic-function-executor/logic-function-executor.service.ts b/packages/twenty-server/src/engine/core-modules/logic-function/logic-function-executor/logic-function-executor.service.ts
+index 4bfcd90b..1ca5badf 100644
+--- a/packages/twenty-server/src/engine/core-modules/logic-function/logic-function-executor/logic-function-executor.service.ts
++++ b/packages/twenty-server/src/engine/core-modules/logic-function/logic-function-executor/logic-function-executor.service.ts
+@@ -14,6 +14,7 @@ import {
+ import {
+   type LogicFunctionExecutionContext,
+   type LogicFunctionRetryContext,
++  type ToolCaller,
+ } from 'twenty-shared/logic-function';
+ import { isDefined } from 'twenty-shared/utils';
+ import { Repository } from 'typeorm';
+@@ -157,6 +158,7 @@ export class LogicFunctionExecutorService {
+     workspaceDeletionRequestTimestamp,
+     retry = { retryCount: 0, maxRetries: 0 },
+     shouldEnforceUsageLimits = true,
++    toolDelegation,
+   }: {
+     logicFunctionId: string;
+     workspaceId: string;
+@@ -167,6 +169,7 @@ export class LogicFunctionExecutorService {
+     workspaceDeletionRequestTimestamp?: string;
+     retry?: LogicFunctionRetryContext;
+     shouldEnforceUsageLimits?: boolean;
++    toolDelegation?: { caller: ToolCaller; accessToken: string };
+   }): Promise<LogicFunctionExecuteResult> {
+     const { flatApplication, flatLogicFunction, flatApplicationVariableMaps } =
+       await this.getFlatEntitiesOrThrow({
+@@ -174,6 +177,36 @@ export class LogicFunctionExecutorService {
+         logicFunctionId,
+       });
+ 
++    const settings = flatLogicFunction.toolTriggerSettings;
++    const requiredFlags =
++      settings?.requiredPermissionFlagUniversalIdentifiers ?? [];
++    const anyRequiredFlags =
++      settings?.requiredAnyPermissionFlagUniversalIdentifiers ?? [];
++    if (
++      settings?.callerDelegationVersion === 1 ||
++      requiredFlags.length > 0 ||
++      anyRequiredFlags.length > 0
++    ) {
++      if (
++        !toolDelegation ||
++        toolDelegation.caller.version !== 1 ||
++        toolDelegation.caller.workspaceId !== workspaceId ||
++        (anyRequiredFlags.length > 0 &&
++          !anyRequiredFlags.some((flag) =>
++            toolDelegation.caller.permissionFlagUniversalIdentifiers.includes(
++              flag,
++            ),
++          )) ||
++        !requiredFlags.every((flag) =>
++          toolDelegation.caller.permissionFlagUniversalIdentifiers.includes(
++            flag,
++          ),
++        )
++      ) {
++        throw new Error('Logic function requires authorized tool delegation');
++      }
++    }
++
+     // Before the shared workspace throttle so a stopped app's flood cannot drain other apps' token bucket.
+     await this.assertApplicationNotStopped(flatApplication);
+ 
+@@ -187,14 +220,15 @@ export class LogicFunctionExecutorService {
+       });
+     }
+ 
+-    const envVariables = await this.getExecutionEnvVariables({
+-      workspaceId,
+-      flatApplication,
+-      flatApplicationVariableMaps,
+-      userId,
+-      userWorkspaceId,
+-      workspaceDeletionRequestTimestamp,
+-    });
++    const envVariables: Record<string, string> =
++      await this.getExecutionEnvVariables({
++        workspaceId,
++        flatApplication,
++        flatApplicationVariableMaps,
++        userId,
++        userWorkspaceId,
++        workspaceDeletionRequestTimestamp,
++      });
+ 
+     const context = await this.buildExecutionContext({
+       workspaceId,
+@@ -202,6 +236,11 @@ export class LogicFunctionExecutorService {
+       userId,
+       userWorkspaceId,
+     });
++    if (toolDelegation) {
++      context.toolCaller = toolDelegation.caller;
++      envVariables['TWENTY_TOOL_CALLER_ACCESS_TOKEN'] =
++        toolDelegation.accessToken;
++    }
+ 
+     const driver = this.logicFunctionDriverFactory.getCurrentDriver();
+ 
+diff --git a/packages/twenty-server/src/engine/core-modules/tool-provider/providers/__tests__/logic-function-tool.provider.spec.ts b/packages/twenty-server/src/engine/core-modules/tool-provider/providers/__tests__/logic-function-tool.provider.spec.ts
+index 0ad192f0..53349fd2 100644
+--- a/packages/twenty-server/src/engine/core-modules/tool-provider/providers/__tests__/logic-function-tool.provider.spec.ts
++++ b/packages/twenty-server/src/engine/core-modules/tool-provider/providers/__tests__/logic-function-tool.provider.spec.ts
+@@ -1,3 +1,4 @@
++import { type LogicFunctionToolDelegationService } from 'src/engine/core-modules/tool-provider/services/logic-function-tool-delegation.service';
+ import { ApplicationRegistrationSourceType } from 'src/engine/core-modules/application/application-registration/enums/application-registration-source-type.enum';
+ import { type FlatApplication } from 'src/engine/core-modules/application/types/flat-application.type';
+ import { LogicFunctionToolProvider } from 'src/engine/core-modules/tool-provider/providers/logic-function-tool.provider';
+@@ -61,7 +62,12 @@ const generateDescriptors = async (
+     }),
+   } as unknown as WorkspaceManyOrAllFlatEntityMapsCacheService;
+ 
+-  const provider = new LogicFunctionToolProvider(flatEntityMapsCacheService);
++  const provider = new LogicFunctionToolProvider(
++    {
++      allowed: jest.fn().mockResolvedValue(true),
++    } as unknown as LogicFunctionToolDelegationService,
++    flatEntityMapsCacheService,
++  );
+ 
+   return (await provider.generateDescriptors(
+     {
+@@ -170,4 +176,30 @@ describe('LogicFunctionToolProvider', () => {
+       'app_second_tool',
+     ]);
+   });
++
++  it('should expose permission-protected delegated tools across applications', async () => {
++    const descriptors = await generateDescriptors(
++      [
++        createFlatLogicFunction({
++          name: 'delegated-tool',
++          applicationId: 'other-application-id',
++          toolTriggerSettings: {
++            callerDelegationVersion: 1,
++            requiredAnyPermissionFlagUniversalIdentifiers: [
++              'operator',
++              'admin',
++            ],
++          },
++        }),
++        createFlatLogicFunction({
++          name: 'unprotected-tool',
++          applicationId: 'other-application-id',
++          toolTriggerSettings: { callerDelegationVersion: 1 },
++        }),
++      ],
++      { id: 'calling-application-id' } as FlatApplication,
++    );
++
++    expect(descriptors.map(({ name }) => name)).toEqual(['app_delegated_tool']);
++  });
+ });
+diff --git a/packages/twenty-server/src/engine/core-modules/tool-provider/providers/logic-function-tool.provider.ts b/packages/twenty-server/src/engine/core-modules/tool-provider/providers/logic-function-tool.provider.ts
+index 55057ac4..4f25a69a 100644
+--- a/packages/twenty-server/src/engine/core-modules/tool-provider/providers/logic-function-tool.provider.ts
++++ b/packages/twenty-server/src/engine/core-modules/tool-provider/providers/logic-function-tool.provider.ts
+@@ -18,12 +18,14 @@ import { type ToolOutput } from 'src/engine/core-modules/tool/types/tool-output.
+ import { WorkspaceManyOrAllFlatEntityMapsCacheService } from 'src/engine/metadata-modules/flat-entity/services/workspace-many-or-all-flat-entity-maps-cache.service';
+ import { type FlatLogicFunction } from 'src/engine/metadata-modules/logic-function/types/flat-logic-function.type';
+ import { buildLogicFunctionToolName } from 'src/engine/core-modules/tool-provider/utils/build-logic-function-tool-name.util';
++import { LogicFunctionToolDelegationService } from 'src/engine/core-modules/tool-provider/services/logic-function-tool-delegation.service';
+ 
+ @Injectable()
+ export class LogicFunctionToolProvider implements ToolProvider {
+   readonly category = ToolCategory.LOGIC_FUNCTION;
+ 
+   constructor(
++    private readonly toolDelegationService: LogicFunctionToolDelegationService,
+     private readonly flatEntityMapsCacheService: WorkspaceManyOrAllFlatEntityMapsCacheService,
+   ) {}
+ 
+@@ -84,15 +86,28 @@ export class LogicFunctionToolProvider implements ToolProvider {
+         isDefined(fn) &&
+         isDefined(fn.toolTriggerSettings) &&
+         fn.deletedAt === null &&
+-        canCallerReachApplication({
++        (canCallerReachApplication({
+           callingApplication: context.application,
+           applicationId: fn.applicationId,
+-        }),
++        }) ||
++          (fn.toolTriggerSettings.callerDelegationVersion === 1 &&
++            (fn.toolTriggerSettings.requiredPermissionFlagUniversalIdentifiers
++              ?.length ?? 0) +
++              (fn.toolTriggerSettings
++                .requiredAnyPermissionFlagUniversalIdentifiers?.length ?? 0) >
++              0)),
+     );
+ 
+     const descriptors: (ToolIndexEntry | ToolDescriptor)[] = [];
+ 
+     for (const logicFunction of logicFunctionsWithSchema) {
++      if (
++        !(await this.toolDelegationService.allowed(
++          logicFunction.toolTriggerSettings,
++          context,
++        ))
++      )
++        continue;
+       const toolName = buildLogicFunctionToolName(logicFunction.name);
+ 
+       const base: ToolIndexEntry = {
+diff --git a/packages/twenty-server/src/engine/core-modules/tool-provider/services/__tests__/logic-function-tool-delegation.service.spec.ts b/packages/twenty-server/src/engine/core-modules/tool-provider/services/__tests__/logic-function-tool-delegation.service.spec.ts
+new file mode 100644
+index 00000000..ba63d66a
+--- /dev/null
++++ b/packages/twenty-server/src/engine/core-modules/tool-provider/services/__tests__/logic-function-tool-delegation.service.spec.ts
+@@ -0,0 +1,187 @@
++import { LogicFunctionToolDelegationService } from '../logic-function-tool-delegation.service';
++import { type ToolProviderContext } from '../../interfaces/tool-provider-context.type';
++import { type WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
++import { type ApplicationTokenService } from 'src/engine/core-modules/auth/token/services/application-token.service';
++import { type JwtWrapperService } from 'src/engine/core-modules/jwt/services/jwt-wrapper.service';
++
++describe('logic function caller delegation', () => {
++  const operator = '1cba9552-106e-48e1-bc1e-6ebc4ecc1747';
++  const admin = '226d7710-f5c4-4d52-a1ea-3b164c18ba73';
++  const role = (id: string, flags: string[], all = false) => ({
++    id,
++    canAccessAllTools: all,
++    rolePermissionFlagIds: flags,
++  });
++  const context = (
++    kind: 'user' | 'apiKey' | 'agent' = 'user',
++  ): ToolProviderContext =>
++    ({
++      workspaceId: 'workspace',
++      userId: kind === 'user' ? 'user' : undefined,
++      userWorkspaceId: kind === 'user' ? 'membership' : undefined,
++      agentId: kind === 'agent' ? 'agent' : undefined,
++      application: kind === 'agent' ? { id: 'origin-app' } : undefined,
++      authContext:
++        kind === 'user'
++          ? { type: 'user', workspaceMemberId: 'member' }
++          : kind === 'apiKey'
++            ? { type: 'apiKey', apiKey: { id: 'key' } }
++            : undefined,
++      rolePermissionConfig: {
++        intersectionOf: { userWorkspaceRoleId: 'operator-role' },
++      },
++    }) as unknown as ToolProviderContext;
++  const cache = { getOrRecompute: jest.fn() };
++  const applicationTokens = {
++    generateApplicationAccessToken: jest
++      .fn()
++      .mockResolvedValue({ token: 'delegated-app-token' }),
++  };
++  const jwt = {
++    signAsyncOrThrow: jest.fn().mockResolvedValue('delegated-key-token'),
++  };
++  const service = new LogicFunctionToolDelegationService(
++    cache as unknown as WorkspaceCacheService,
++    applicationTokens as unknown as ApplicationTokenService,
++    jwt as unknown as JwtWrapperService,
++  );
++  beforeEach(() => {
++    jest.clearAllMocks();
++    cache.getOrRecompute.mockResolvedValue({
++      flatAgentMaps: {
++        universalIdentifierById: { agent: 'agent' },
++        byUniversalIdentifier: {
++          agent: { id: 'agent', applicationId: 'origin-app', deletedAt: null },
++        },
++      },
++      flatRoleMaps: {
++        universalIdentifierById: {
++          'operator-role': 'operator-role',
++          'admin-role': 'admin-role',
++        },
++        byUniversalIdentifier: {
++          'operator-role': role('operator-role', ['operator-grant']),
++          'admin-role': role('admin-role', ['operator-grant', 'admin-grant']),
++        },
++      },
++      flatRolePermissionFlagMaps: {
++        universalIdentifierById: {
++          'operator-grant': 'operator-grant',
++          'admin-grant': 'admin-grant',
++        },
++        byUniversalIdentifier: {
++          'operator-grant': { permissionFlagUniversalIdentifier: operator },
++          'admin-grant': { permissionFlagUniversalIdentifier: admin },
++        },
++      },
++      flatPermissionFlagMaps: {
++        byUniversalIdentifier: {
++          [operator]: { universalIdentifier: operator, permissionType: 'tool' },
++          [admin]: { universalIdentifier: admin, permissionType: 'tool' },
++        },
++      },
++    });
++  });
++  it('intersects every effective role without promoting the least privileged one', async () => {
++    const ctx = context();
++    ctx.rolePermissionConfig = {
++      intersectionOf: {
++        apiKeyRoleId: 'operator-role',
++        applicationRoleId: 'admin-role',
++      },
++    };
++    expect(await service.permissionFlags(ctx)).toEqual([operator]);
++    expect(
++      await service.allowed(
++        {
++          requiredPermissionFlagUniversalIdentifiers: [admin],
++          callerDelegationVersion: 1,
++        },
++        ctx,
++      ),
++    ).toBe(false);
++  });
++  it.each(['user', 'apiKey', 'agent'] as const)(
++    'delegates %s using its original identity',
++    async (kind) => {
++      const result = await service.delegate(context(kind), 'target-app');
++      expect(result.caller.kind).toBe(kind === 'user' ? 'member' : kind);
++      expect(result.caller.workspaceId).toBe('workspace');
++      if (kind === 'apiKey')
++        expect(jwt.signAsyncOrThrow).toHaveBeenCalledWith(
++          expect.objectContaining({ jti: 'key', type: 'API_KEY' }),
++          { expiresIn: '5m' },
++        );
++      if (kind === 'agent')
++        expect(
++          applicationTokens.generateApplicationAccessToken,
++        ).toHaveBeenCalledWith(
++          expect.objectContaining({
++            applicationId: 'origin-app',
++            agentId: 'agent',
++          }),
++        );
++      if (kind === 'user')
++        expect(result.caller.workspaceMemberId).toBe('member');
++    },
++  );
++  it('retains the agent constraint and provenance on member-backed runs', async () => {
++    const ctx = context('user');
++    ctx.agentId = 'agent';
++    const result = await service.delegate(ctx, 'target-app');
++    expect(result.caller).toMatchObject({
++      kind: 'member',
++      id: 'member',
++      agentId: 'agent',
++      surface: 'AI_TOOL',
++    });
++    expect(
++      applicationTokens.generateApplicationAccessToken,
++    ).toHaveBeenCalledWith(
++      expect.objectContaining({
++        userId: 'user',
++        userWorkspaceId: 'membership',
++        agentId: 'agent',
++        toolCallerDelegation: true,
++      }),
++    );
++  });
++  it('denies missing roles and system bypasses instead of creating an administrator', async () => {
++    const ctx = context();
++    ctx.rolePermissionConfig = { intersectionOf: { apiKeyRoleId: null } };
++    expect(await service.permissionFlags(ctx)).toEqual([]);
++    ctx.rolePermissionConfig = { shouldBypassPermissionChecks: true };
++    expect(await service.permissionFlags(ctx)).toEqual([]);
++  });
++  it('accepts an alternative admin grant without requiring the operator grant too', async () => {
++    const maps = await cache.getOrRecompute('workspace', []);
++    maps.flatRoleMaps.byUniversalIdentifier[
++      'admin-role'
++    ].rolePermissionFlagIds = ['admin-grant'];
++    const ctx = context('apiKey');
++    ctx.rolePermissionConfig = {
++      intersectionOf: { apiKeyRoleId: 'admin-role' },
++    };
++    expect(
++      await service.allowed(
++        {
++          callerDelegationVersion: 1,
++          requiredAnyPermissionFlagUniversalIdentifiers: [operator, admin],
++        },
++        ctx,
++      ),
++    ).toBe(true);
++    expect(
++      await service.allowed(
++        {
++          callerDelegationVersion: 1,
++          requiredPermissionFlagUniversalIdentifiers: [operator],
++        },
++        ctx,
++      ),
++    ).toBe(false);
++  });
++  it('leaves existing tool definitions unchanged', async () => {
++    expect(await service.allowed({}, context())).toBe(true);
++  });
++});
+diff --git a/packages/twenty-server/src/engine/core-modules/tool-provider/services/logic-function-tool-delegation.service.ts b/packages/twenty-server/src/engine/core-modules/tool-provider/services/logic-function-tool-delegation.service.ts
+new file mode 100644
+index 00000000..18034812
+--- /dev/null
++++ b/packages/twenty-server/src/engine/core-modules/tool-provider/services/logic-function-tool-delegation.service.ts
+@@ -0,0 +1,177 @@
++import { Injectable } from '@nestjs/common';
++import { type ToolTriggerSettings } from 'twenty-shared/application';
++import { type ToolCaller } from 'twenty-shared/logic-function';
++import { ApplicationTokenService } from 'src/engine/core-modules/auth/token/services/application-token.service';
++import { JwtTokenTypeEnum } from 'src/engine/core-modules/auth/types/jwt-token-type.enum';
++import { JwtWrapperService } from 'src/engine/core-modules/jwt/services/jwt-wrapper.service';
++import { type ToolProviderContext } from 'src/engine/core-modules/tool-provider/interfaces/tool-provider-context.type';
++import { findFlatEntityByIdInFlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/utils/find-flat-entity-by-id-in-flat-entity-maps.util';
++import { getRoleIdsToIntersect } from 'src/engine/twenty-orm/utils/get-role-ids-to-intersect.util';
++import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
++
++@Injectable()
++export class LogicFunctionToolDelegationService {
++  constructor(
++    private readonly workspaceCacheService: WorkspaceCacheService,
++    private readonly applicationTokenService: ApplicationTokenService,
++    private readonly jwtWrapperService: JwtWrapperService,
++  ) {}
++
++  async permissionFlags(context: ToolProviderContext): Promise<string[]> {
++    const config = context.rolePermissionConfig;
++    // A system bypass is not a delegatable human/machine identity.
++    if ('shouldBypassPermissionChecks' in config) return [];
++    const roleIds = getRoleIdsToIntersect(config.intersectionOf);
++    if (!roleIds?.length) return [];
++    const { flatRoleMaps, flatRolePermissionFlagMaps, flatPermissionFlagMaps } =
++      await this.workspaceCacheService.getOrRecompute(context.workspaceId, [
++        'flatRoleMaps',
++        'flatRolePermissionFlagMaps',
++        'flatPermissionFlagMaps',
++      ]);
++    const roles = roleIds.map((flatEntityId) =>
++      findFlatEntityByIdInFlatEntityMaps({
++        flatEntityId,
++        flatEntityMaps: flatRoleMaps,
++      }),
++    );
++    return Object.values(flatPermissionFlagMaps.byUniversalIdentifier)
++      .filter(
++        (flag): flag is NonNullable<typeof flag> =>
++          flag !== undefined && flag !== null,
++      )
++      .filter((flag) =>
++        roles.every((role) => {
++          if (!role) return false;
++          if (flag.permissionType === 'tool' && role.canAccessAllTools)
++            return true;
++          return role.rolePermissionFlagIds.some((id) => {
++            const universalIdentifier =
++              flatRolePermissionFlagMaps.universalIdentifierById[id];
++            return (
++              universalIdentifier !== undefined &&
++              flatRolePermissionFlagMaps.byUniversalIdentifier[
++                universalIdentifier
++              ]?.permissionFlagUniversalIdentifier === flag.universalIdentifier
++            );
++          });
++        }),
++      )
++      .map((flag) => flag!.universalIdentifier);
++  }
++
++  async allowed(
++    settings: ToolTriggerSettings | null | undefined,
++    context: ToolProviderContext,
++  ): Promise<boolean> {
++    const required = settings?.requiredPermissionFlagUniversalIdentifiers ?? [];
++    const anyRequired =
++      settings?.requiredAnyPermissionFlagUniversalIdentifiers ?? [];
++    if (
++      !required.length &&
++      !anyRequired.length &&
++      settings?.callerDelegationVersion !== 1
++    )
++      return true;
++    const flags = await this.permissionFlags(context);
++    return (
++      required.every((flag) => flags.includes(flag)) &&
++      (!anyRequired.length ||
++        anyRequired.some((flag) => flags.includes(flag))) &&
++      this.principalKind(context) !== null
++    );
++  }
++
++  private principalKind(
++    context: ToolProviderContext,
++  ): ToolCaller['kind'] | null {
++    if (
++      context.authContext?.type === 'user' &&
++      context.userId &&
++      context.userWorkspaceId
++    )
++      return 'member';
++    if (context.authContext?.type === 'apiKey') return 'apiKey';
++    if (context.agentId) return 'agent';
++    return null;
++  }
++
++  async delegate(context: ToolProviderContext, targetApplicationId: string) {
++    const kind = this.principalKind(context);
++    if (!kind) throw new Error('Tool caller cannot be delegated');
++    const auth = context.authContext;
++    const workspaceMemberId =
++      auth?.type === 'user' ? auth.workspaceMemberId : null;
++    const id =
++      kind === 'member'
++        ? workspaceMemberId
++        : auth?.type === 'apiKey'
++          ? auth.apiKey.id
++          : context.agentId;
++    if (!id) throw new Error('Tool caller identity is missing');
++    const caller: ToolCaller = {
++      version: 1,
++      workspaceId: context.workspaceId,
++      kind,
++      id,
++      workspaceMemberId,
++      surface: context.agentId ? 'AI_TOOL' : 'MCP',
++      ...(context.agentId ? { agentId: context.agentId } : {}),
++      permissionFlagUniversalIdentifiers: await this.permissionFlags(context),
++    };
++    let accessToken: string;
++    if (auth?.type === 'apiKey') {
++      // Sign the same principal, not a new elevated application principal.
++      // Normal JWT validation rechecks the key's expiry/revocation and role.
++      accessToken = await this.jwtWrapperService.signAsyncOrThrow(
++        {
++          type: JwtTokenTypeEnum.API_KEY,
++          sub: context.workspaceId,
++          workspaceId: context.workspaceId,
++          jti: auth.apiKey.id,
++          ...('workspaceMemberId' in auth &&
++          typeof auth.workspaceMemberId === 'string'
++            ? { workspaceMemberId: auth.workspaceMemberId }
++            : {}),
++        },
++        { expiresIn: '5m' },
++      );
++    } else {
++      let applicationId =
++        auth?.type === 'application'
++          ? auth.application.id
++          : auth?.type === 'user' && auth.application
++            ? auth.application.id
++            : (context.application?.id ?? targetApplicationId);
++      if (kind === 'agent') {
++        const { flatAgentMaps } =
++          await this.workspaceCacheService.getOrRecompute(context.workspaceId, [
++            'flatAgentMaps',
++          ]);
++        const agent = findFlatEntityByIdInFlatEntityMaps({
++          flatEntityId: id,
++          flatEntityMaps: flatAgentMaps,
++        });
++        if (!agent || agent.deletedAt !== null)
++          throw new Error('Tool agent is no longer available');
++        applicationId = agent.applicationId;
++      }
++      const token =
++        await this.applicationTokenService.generateApplicationAccessToken({
++          workspaceId: context.workspaceId,
++          applicationId,
++          ...(kind === 'member'
++            ? {
++                userId: context.userId,
++                userWorkspaceId: context.userWorkspaceId,
++              }
++            : {}),
++          ...(context.agentId ? { agentId: context.agentId } : {}),
++          toolCallerDelegation: true,
++          expiresIn: '5m',
++        });
++      accessToken = token.token;
++    }
++    return { caller, accessToken };
++  }
++}
+diff --git a/packages/twenty-server/src/engine/core-modules/tool-provider/services/tool-executor.service.ts b/packages/twenty-server/src/engine/core-modules/tool-provider/services/tool-executor.service.ts
+index 22816c92..cdcc3685 100644
+--- a/packages/twenty-server/src/engine/core-modules/tool-provider/services/tool-executor.service.ts
++++ b/packages/twenty-server/src/engine/core-modules/tool-provider/services/tool-executor.service.ts
+@@ -36,10 +36,12 @@ import { withResolvedToolAuthContext } from 'src/engine/core-modules/tool-provid
+ import { type ToolOutput } from 'src/engine/core-modules/tool/types/tool-output.type';
+ import { UserEntity } from 'src/engine/core-modules/user/user.entity';
+ import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
++import { LogicFunctionToolDelegationService } from 'src/engine/core-modules/tool-provider/services/logic-function-tool-delegation.service';
+ 
+ @Injectable()
+ export class ToolExecutorService {
+   constructor(
++    private readonly toolDelegationService: LogicFunctionToolDelegationService,
+     @Inject(TOOL_PROVIDERS)
+     private readonly providers: ToolProvider[],
+     private readonly definedToolRegistryService: DefinedToolRegistryService,
+@@ -298,8 +300,7 @@ export class ToolExecutorService {
+           objectName: ref.objectNameSingular,
+           groupBy: groupBy as ObjectRecordGroupBy,
+           aggregateOperation: aggregateOperation as
+-            | keyof typeof AggregateOperations
+-            | undefined,
++            keyof typeof AggregateOperations | undefined,
+           aggregateFieldName: aggregateFieldName as string | undefined,
+           limit: groupByLimit as number | undefined,
+           orderBy: groupByOrderBy as 'ASC' | 'DESC' | undefined,
+@@ -373,10 +374,39 @@ export class ToolExecutorService {
+     args: Record<string, unknown>,
+     context: ToolProviderContext,
+   ): Promise<ToolOutput> {
++    const { flatLogicFunctionMaps } =
++      await this.workspaceCacheService.getOrRecompute(context.workspaceId, [
++        'flatLogicFunctionMaps',
++      ]);
++    const universalIdentifier =
++      flatLogicFunctionMaps.universalIdentifierById[ref.logicFunctionId];
++    const fn = universalIdentifier
++      ? flatLogicFunctionMaps.byUniversalIdentifier[universalIdentifier]
++      : undefined;
++    if (
++      !fn ||
++      fn.deletedAt !== null ||
++      !(await this.toolDelegationService.allowed(
++        fn.toolTriggerSettings,
++        context,
++      ))
++    ) {
++      throw new Error('Tool unavailable or insufficient permissions');
++    }
++    const toolDelegation =
++      fn.toolTriggerSettings?.callerDelegationVersion === 1 ||
++      (fn.toolTriggerSettings?.requiredPermissionFlagUniversalIdentifiers
++        ?.length ?? 0) +
++        (fn.toolTriggerSettings?.requiredAnyPermissionFlagUniversalIdentifiers
++          ?.length ?? 0) >
++        0
++        ? await this.toolDelegationService.delegate(context, fn.applicationId)
++        : undefined;
+     const result = await this.logicFunctionExecutorService.execute({
+       logicFunctionId: ref.logicFunctionId,
+       workspaceId: context.workspaceId,
+       payload: args,
++      toolDelegation,
+       userId: context.userId,
+       userWorkspaceId: context.userWorkspaceId,
+     });
+diff --git a/packages/twenty-server/src/engine/core-modules/tool-provider/services/tool-registry.service.ts b/packages/twenty-server/src/engine/core-modules/tool-provider/services/tool-registry.service.ts
+index 14814551..d957eb7c 100644
+--- a/packages/twenty-server/src/engine/core-modules/tool-provider/services/tool-registry.service.ts
++++ b/packages/twenty-server/src/engine/core-modules/tool-provider/services/tool-registry.service.ts
+@@ -1,3 +1,4 @@
++import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
+ import { Inject, Injectable, Logger } from '@nestjs/common';
+ 
+ import * as Sentry from '@sentry/node';
+@@ -199,6 +200,8 @@ export class ToolRegistryService {
+       userWorkspaceId?: string;
+       locale?: keyof typeof APP_LOCALES;
+       rolePermissionConfig: RolePermissionConfig;
++      authContext?: WorkspaceAuthContext;
++      agentId?: string;
+       categories?: ToolCategory[];
+       excludeTools?: Set<string>;
+       application?: FlatApplication;
+@@ -207,6 +210,8 @@ export class ToolRegistryService {
+     const context = this.buildContextFromToolContext({
+       workspaceId,
+       rolePermissionConfig: options.rolePermissionConfig,
++      authContext: options.authContext,
++      agentId: options.agentId,
+       userId: options.userId,
+       userWorkspaceId: options.userWorkspaceId,
+       locale: options.locale,
+diff --git a/packages/twenty-server/src/engine/core-modules/tool-provider/tool-provider.module.ts b/packages/twenty-server/src/engine/core-modules/tool-provider/tool-provider.module.ts
+index 311ec5c4..42502ff2 100644
+--- a/packages/twenty-server/src/engine/core-modules/tool-provider/tool-provider.module.ts
++++ b/packages/twenty-server/src/engine/core-modules/tool-provider/tool-provider.module.ts
+@@ -1,3 +1,6 @@
++import { JwtModule } from 'src/engine/core-modules/jwt/jwt.module';
++import { TokenModule } from 'src/engine/core-modules/auth/token/token.module';
++import { LogicFunctionToolDelegationService } from 'src/engine/core-modules/tool-provider/services/logic-function-tool-delegation.service';
+ import { Module } from '@nestjs/common';
+ import { DiscoveryModule } from '@nestjs/core';
+ import { TypeOrmModule } from '@nestjs/typeorm';
+@@ -39,6 +42,8 @@ import { ToolRegistryService } from './services/tool-registry.service';
+ 
+ @Module({
+   imports: [
++    JwtModule,
++    TokenModule,
+     DiscoveryModule,
+     ApplicationTranslationCatalogModule,
+     ToolModule,
+@@ -59,6 +64,7 @@ import { ToolRegistryService } from './services/tool-registry.service';
+     TypeOrmModule.forFeature([UserEntity, FileEntity]),
+   ],
+   providers: [
++    LogicFunctionToolDelegationService,
+     ToolIndexResolver,
+     DefinedToolRegistryService,
+     ToolExecutorService,
+diff --git a/packages/twenty-server/src/engine/core-modules/tool-provider/tools/get-tool-catalog.tool.ts b/packages/twenty-server/src/engine/core-modules/tool-provider/tools/get-tool-catalog.tool.ts
+index 6ab6cb72..b833a633 100644
+--- a/packages/twenty-server/src/engine/core-modules/tool-provider/tools/get-tool-catalog.tool.ts
++++ b/packages/twenty-server/src/engine/core-modules/tool-provider/tools/get-tool-catalog.tool.ts
+@@ -1,3 +1,4 @@
++import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
+ import { z } from 'zod';
+ 
+ import { ToolCategory } from 'twenty-shared/ai';
+@@ -34,6 +35,8 @@ export const createGetToolCatalogTool = (
+   workspaceId: string,
+   options: {
+     rolePermissionConfig: RolePermissionConfig;
++    authContext?: WorkspaceAuthContext;
++    agentId?: string;
+     userId?: string;
+     userWorkspaceId?: string;
+     excludeTools?: Set<string>;
+diff --git a/packages/twenty-server/src/engine/guards/auth-principal.guard.ts b/packages/twenty-server/src/engine/guards/auth-principal.guard.ts
+index f66c7f41..66f21b3f 100644
+--- a/packages/twenty-server/src/engine/guards/auth-principal.guard.ts
++++ b/packages/twenty-server/src/engine/guards/auth-principal.guard.ts
+@@ -8,6 +8,7 @@ import {
+ } from '@nestjs/common';
+ 
+ import { isDefined } from 'twenty-shared/utils';
++import { isToolCallerReadRequest } from 'src/engine/guards/utils/is-tool-caller-read-request.util';
+ 
+ import { AUTH_PRINCIPAL_GUARD_CONFIG_KEY } from 'src/engine/guards/constants/auth-principal-guard-config-key.constant';
+ import { AuthPrincipalRefusedException } from 'src/engine/guards/exceptions/auth-principal-refused.exception';
+@@ -28,11 +29,19 @@ export const AuthPrincipalGuard = (
+         ? classifyAuthPrincipal(request)
+         : undefined;
+ 
++      if (request?.toolCallerDelegation && !isToolCallerReadRequest(request)) {
++        throw new AuthPrincipalRefusedException();
++      }
++
+       if (
+         isDefined(authPrincipalVariant) &&
+         isAuthPrincipalVariantAccepted({
+           authPrincipalGuardConfig,
+-          authPrincipalVariant,
++          authPrincipalVariant:
++            request?.toolCallerDelegation &&
++            authPrincipalVariant.kind === 'application'
++              ? { ...authPrincipalVariant, withAgent: false }
++              : authPrincipalVariant,
+         })
+       ) {
+         return true;
+diff --git a/packages/twenty-server/src/engine/guards/utils/__tests__/is-tool-caller-read-request.util.spec.ts b/packages/twenty-server/src/engine/guards/utils/__tests__/is-tool-caller-read-request.util.spec.ts
+new file mode 100644
+index 00000000..756e3033
+--- /dev/null
++++ b/packages/twenty-server/src/engine/guards/utils/__tests__/is-tool-caller-read-request.util.spec.ts
+@@ -0,0 +1,31 @@
++import { type Request } from 'express';
++import { isToolCallerReadRequest } from '../is-tool-caller-read-request.util';
++
++describe('delegated caller API scope', () => {
++  it.each([
++    ['/rest/people', 'GET', undefined, true],
++    ['/rest/people', 'POST', undefined, false],
++    ['/rest/people/id', 'DELETE', undefined, false],
++    ['/rest/metadata/objects', 'POST', undefined, false],
++    ['/metadata', 'POST', '{ me { id } }', false],
++    ['/mcp', 'POST', undefined, false],
++    ['/s/route', 'GET', undefined, false],
++    ['/graphql', 'GET', '{ people { id } }', false],
++    ['/graphql', 'POST', '{ people { id } }', true],
++    ['/graphql', 'POST', 'mutation { deletePerson(id:"id") { id } }', false],
++    ['/graphql', 'POST', 'subscription { people { id } }', false],
++    ['/graphql', 'POST', 'query One { a } query Two { b }', false],
++    ['/graphql', 'POST', 'invalid', false],
++  ])(
++    '%s %s permits only core reads',
++    (originalUrl, method, query, expected) => {
++      expect(
++        isToolCallerReadRequest({
++          originalUrl,
++          method,
++          body: { query },
++        } as Request),
++      ).toBe(expected);
++    },
++  );
++});
+diff --git a/packages/twenty-server/src/engine/guards/utils/is-tool-caller-read-request.util.ts b/packages/twenty-server/src/engine/guards/utils/is-tool-caller-read-request.util.ts
+new file mode 100644
+index 00000000..60817157
+--- /dev/null
++++ b/packages/twenty-server/src/engine/guards/utils/is-tool-caller-read-request.util.ts
+@@ -0,0 +1,21 @@
++import { type Request } from 'express';
++import { getOperationAST, parse } from 'graphql';
++
++export const isToolCallerReadRequest = (request: Request): boolean => {
++  const path = request.originalUrl?.split('?')[0];
++  if (path?.startsWith('/rest/') && request.method === 'GET') return true;
++  if (
++    path !== '/graphql' ||
++    request.method !== 'POST' ||
++    typeof request.body?.query !== 'string'
++  )
++    return false;
++  try {
++    return (
++      getOperationAST(parse(request.body.query), request.body.operationName)
++        ?.operation === 'query'
++    );
++  } catch {
++    return false;
++  }
++};
+diff --git a/packages/twenty-server/src/engine/middlewares/middleware.service.ts b/packages/twenty-server/src/engine/middlewares/middleware.service.ts
+index b52b1627..75a1a8dd 100644
+--- a/packages/twenty-server/src/engine/middlewares/middleware.service.ts
++++ b/packages/twenty-server/src/engine/middlewares/middleware.service.ts
+@@ -1,4 +1,5 @@
+ import { Injectable } from '@nestjs/common';
++import { isToolCallerReadRequest } from 'src/engine/guards/utils/is-tool-caller-read-request.util';
+ 
+ import { isNonEmptyString } from '@sniptt/guards';
+ import { type Request, type Response } from 'express';
+@@ -170,8 +171,11 @@ export class MiddlewareService {
+       throw error;
+     }
+ 
+-    // GraphQL record resolvers run no AuthPrincipalGuard, so agent tokens are refused here
+-    if (isDefined(data.agentId)) {
++    // Delegated reads retain agent roles; ordinary interpreter tokens stay MCP-only.
++    if (
++      (data.toolCallerDelegation && !isToolCallerReadRequest(request)) ||
++      (isDefined(data.agentId) && !data.toolCallerDelegation)
++    ) {
+       throw new AuthException(
+         'This token is only accepted by MCP',
+         AuthExceptionCode.FORBIDDEN_EXCEPTION,
+diff --git a/packages/twenty-server/src/engine/utils/bind-data-to-request-object.util.ts b/packages/twenty-server/src/engine/utils/bind-data-to-request-object.util.ts
+index ae686234..e9a9ca79 100644
+--- a/packages/twenty-server/src/engine/utils/bind-data-to-request-object.util.ts
++++ b/packages/twenty-server/src/engine/utils/bind-data-to-request-object.util.ts
+@@ -12,6 +12,7 @@ export const bindDataToRequestObject = (
+   request.apiKey = data.apiKey;
+   request.application = data.application;
+   request.agentId = data.agentId;
++  request.toolCallerDelegation = data.toolCallerDelegation;
+   request.userWorkspace = data.userWorkspace;
+   request.workspace = data.workspace;
+   request.workspaceId = data.workspace?.id;
+diff --git a/packages/twenty-shared/src/application/toolTriggerSettingsType.ts b/packages/twenty-shared/src/application/toolTriggerSettingsType.ts
+index 9a50dc5a..e8c248fb 100644
+--- a/packages/twenty-shared/src/application/toolTriggerSettingsType.ts
++++ b/packages/twenty-shared/src/application/toolTriggerSettingsType.ts
+@@ -2,6 +2,12 @@ import { type InputJsonSchema } from '@/logic-function/input-json-schema.type';
+ 
+ // inputSchema is optional in the SDK; the manifest builder infers it from the handler source.
+ export type ToolTriggerSettings = {
++  // All flags are required; checked on discovery and every execution.
++  requiredPermissionFlagUniversalIdentifiers?: string[];
++  // When provided, at least one of these additional grants is required.
++  requiredAnyPermissionFlagUniversalIdentifiers?: string[];
++  // Inject an authenticated principal and a short-lived caller-scoped read token.
++  callerDelegationVersion?: 1;
+   inputSchema?: InputJsonSchema;
+   // Front component that renders this tool's calls in the AI chat; resolved to its id when descriptors are built.
+   frontComponentUniversalIdentifier?: string;
+diff --git a/packages/twenty-shared/src/logic-function/index.ts b/packages/twenty-shared/src/logic-function/index.ts
+index e0bef1ff..94798bca 100644
+--- a/packages/twenty-shared/src/logic-function/index.ts
++++ b/packages/twenty-shared/src/logic-function/index.ts
+@@ -19,6 +19,7 @@ export { isRecordArraySchema } from './is-record-array-schema';
+ export { isRecordObjectSchema } from './is-record-object-schema';
+ export { jsonSchemaToInputSchema } from './json-schema-to-input-schema';
+ export type {
++  ToolCaller,
+   LogicFunctionExecutionContext,
+   LogicFunctionRetryContext,
+ } from './logic-function-execution-context.type';
+diff --git a/packages/twenty-shared/src/logic-function/logic-function-execution-context.type.ts b/packages/twenty-shared/src/logic-function/logic-function-execution-context.type.ts
+index 38fb39b4..d1984234 100644
+--- a/packages/twenty-shared/src/logic-function/logic-function-execution-context.type.ts
++++ b/packages/twenty-shared/src/logic-function/logic-function-execution-context.type.ts
+@@ -1,10 +1,24 @@
++export type ToolCaller = {
++  version: 1;
++  workspaceId: string;
++  kind: 'member' | 'apiKey' | 'agent';
++  id: string;
++  workspaceMemberId: string | null;
++  agentId?: string;
++  permissionFlagUniversalIdentifiers: string[];
++  surface: 'MCP' | 'AI_TOOL';
++};
++
+ export type LogicFunctionExecutionContext = {
++  // Trusted engine context, never copied from function arguments.
++  toolCaller?: ToolCaller;
+   retryCount: number;
+   maxRetries: number;
+   workspaceId: string;
+   // Null for cron, install hooks and unauthenticated webhooks.
+   userWorkspaceId: string | null;
+   workspaceMemberId: string | null;
++  agentId?: string;
+ };
+ 
+ export type LogicFunctionRetryContext = Pick<

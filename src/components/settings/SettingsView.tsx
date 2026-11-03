@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SurfaceStyles } from '../common/SurfaceStyles';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RestApiClient } from 'twenty-client-sdk/rest';
 import { copyToClipboard } from 'twenty-sdk/front-component';
 import { Tag } from 'twenty-ui/data-display';
@@ -102,13 +103,16 @@ const Copyable = ({
   copyLabel: string;
 }) => {
   const theme = useTheme();
+  const { t } = useCopy();
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  useEffect(() => setCopyState('idle'), [value]);
 
   if (value === null) return null;
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: theme.spacing[2] }}>
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: '1 1 auto' }}>
-        <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.light }}>
+        <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.secondary }}>
           {label}
         </span>
         <code
@@ -123,7 +127,10 @@ const Copyable = ({
         </code>
       </div>
       {/* Copying a URL changes nothing, so it is not one of the gated actions. */}
-      <ActionButton label={copyLabel} onClick={() => void copyToClipboard(value)} />
+      <ActionButton label={copyState === 'copied' ? t('common.copied') : copyLabel} onClick={() => {
+        void copyToClipboard(value).then(() => setCopyState('copied')).catch(() => setCopyState('failed'));
+      }} />
+      <span role="status" className={copyState === 'copied' ? 'wa-sr-only' : undefined}>{copyState === 'failed' ? t('common.copyFailed') : copyState === 'copied' ? t('common.copied') : ''}</span>
     </div>
   );
 };
@@ -150,6 +157,10 @@ export const SettingsView = () => {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  busyRef.current = busy;
+  const pending = useRef(0);
+  const mutating = useRef(false);
   /**
    * The workspace refused this caller (D-66). Every action here needs the
    * WhatsApp admin role, and the page opens by reading diagnostics — so one
@@ -212,7 +223,7 @@ export const SettingsView = () => {
        * focus and blink out of their loading state mid-click.
        */
       ({ disabled = false, ...props }: Parameters<typeof ActionButton>[0]) => (
-        <ActionButton {...props} disabled={disabled || forbidden} />
+        <ActionButton {...props} disabled={disabled || forbidden || busyRef.current} />
       ),
     [forbidden],
   );
@@ -229,6 +240,10 @@ export const SettingsView = () => {
    */
   const post = useCallback(
     async <T,>(path: string, body: Record<string, unknown>): Promise<T | null> => {
+      const mutation = !['diagnostics', 'variables', 'list', 'replayDryRun'].includes(String(body.action));
+      if (mutation && mutating.current) return null;
+      if (mutation) mutating.current = true;
+      pending.current += 1;
       setBusy(true);
       setError(null);
       setNotice(null);
@@ -261,7 +276,9 @@ export const SettingsView = () => {
 
         return null;
       } finally {
-        setBusy(false);
+        if (mutation) mutating.current = false;
+        pending.current -= 1;
+        setBusy(pending.current > 0);
       }
     },
     [client],
@@ -419,7 +436,7 @@ export const SettingsView = () => {
 
   return (
     <div
-      className="wa-settings"
+      className="wa-surface wa-settings"
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -430,6 +447,7 @@ export const SettingsView = () => {
         padding: theme.spacing[2],
       }}
     >
+      <SurfaceStyles />
       <Tabs
         group="settings"
         label={t('settings.tab.connection')}
@@ -450,7 +468,12 @@ export const SettingsView = () => {
         pressed anything.
       */}
       {forbidden ? <Banner tone="danger">{t('settings.needsAdminRole')}</Banner> : null}
-      {error === null ? null : <Banner tone="danger">{error}</Banner>}
+      {error === null ? null : (
+        <Banner tone="danger">
+          {error}
+          {(data === null || forbidden) ? <ActionButton label={t('common.retry')} busy={busy} icon="retry" onClick={() => void load()} /> : null}
+        </Banner>
+      )}
       {notice === null ? null : <Banner tone="success">{notice}</Banner>}
 
       {tab === 'connection' ? (
@@ -696,7 +719,7 @@ export const SettingsView = () => {
                 ? t('settings.verifyTokenSet')
                 : t('settings.verifyTokenMissing')}
             </div>
-            <div style={{ fontSize: theme.font.size.sm, color: theme.font.color.tertiary }}>
+            <div style={{ fontSize: theme.font.size.sm, color: theme.font.color.secondary }}>
               {t('settings.requiredFields')}: {(data?.webhook.requiredFields ?? []).join(', ')}
             </div>
             <AdminAction
@@ -750,7 +773,7 @@ export const SettingsView = () => {
                 </div>
 
                 <span
-                  style={{ fontSize: theme.font.size.sm, color: theme.font.color.tertiary }}
+                  style={{ fontSize: theme.font.size.sm, color: theme.font.color.secondary }}
                 >
                   {describeHealth(row.key, row.detail, t, lang)}
                 </span>
@@ -784,7 +807,7 @@ export const SettingsView = () => {
           }
         >
           {templates.length === 0 ? (
-            <span style={{ fontSize: theme.font.size.md, color: theme.font.color.tertiary }}>
+            <span style={{ fontSize: theme.font.size.md, color: theme.font.color.secondary }}>
               {t('settings.noTemplates')}
             </span>
           ) : (
@@ -848,7 +871,7 @@ export const SettingsView = () => {
               }}
             >
               <span>{String(template.name ?? '—')}</span>
-              <span style={{ color: theme.font.color.tertiary }}>
+              <span style={{ color: theme.font.color.secondary }}>
                 {String(template.language ?? '')} · {String(template.category ?? '')}
               </span>
               <StatusPill status={(template.status ?? null) as string | null} />
@@ -876,7 +899,7 @@ export const SettingsView = () => {
               {template.qualityScore === null ||
               template.qualityScore === undefined ||
               String(template.qualityScore).toUpperCase() === 'UNKNOWN' ? null : (
-                <span style={{ color: theme.font.color.tertiary }}>
+                <span style={{ color: theme.font.color.secondary }}>
                   {t('settings.templateQuality', { score: String(template.qualityScore) })}
                 </span>
               )}
@@ -923,7 +946,7 @@ export const SettingsView = () => {
                   style={{
                     width: '100%',
                     fontSize: theme.font.size.sm,
-                    color: theme.font.color.tertiary,
+                    color: theme.font.color.secondary,
                   }}
                 >
                   {String(template.publishRefusal)}
@@ -989,11 +1012,11 @@ export const SettingsView = () => {
               </div>
             }
           >
-            <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}>
+            <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
               {t('settings.replayNote')}
             </span>
             {(data?.failedEvents ?? []).length === 0 ? (
-              <span style={{ fontSize: theme.font.size.md, color: theme.font.color.tertiary }}>
+              <span style={{ fontSize: theme.font.size.md, color: theme.font.color.secondary }}>
                 {t('common.none')}
               </span>
             ) : null}
@@ -1047,7 +1070,7 @@ export const SettingsView = () => {
           */}
           <Card title={t('settings.failedOutbound')}>
             {(data?.failedOutbound ?? []).length === 0 ? (
-              <span style={{ fontSize: theme.font.size.md, color: theme.font.color.tertiary }}>
+              <span style={{ fontSize: theme.font.size.md, color: theme.font.color.secondary }}>
                 {t('common.none')}
               </span>
             ) : null}
@@ -1069,7 +1092,7 @@ export const SettingsView = () => {
                 </span>
                 {message.errorDetail === null || message.errorDetail === undefined ? null : (
                   <span
-                    style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}
+                    style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}
                   >
                     {String(message.errorDetail)}
                   </span>
@@ -1080,7 +1103,7 @@ export const SettingsView = () => {
 
           <Card title={t('settings.stuckMessages')}>
             {(data?.stuckOutbound ?? []).length === 0 ? (
-              <span style={{ fontSize: theme.font.size.md, color: theme.font.color.tertiary }}>
+              <span style={{ fontSize: theme.font.size.md, color: theme.font.color.secondary }}>
                 {t('common.none')}
               </span>
             ) : null}
@@ -1105,7 +1128,7 @@ export const SettingsView = () => {
               />
             }
           >
-            <span style={{ fontSize: theme.font.size.md, color: theme.font.color.tertiary }}>
+            <span style={{ fontSize: theme.font.size.md, color: theme.font.color.secondary }}>
               {t('settings.notificationsNote')}
             </span>
             {reviewNotes.map((note) => (
@@ -1119,14 +1142,14 @@ export const SettingsView = () => {
           </Card>
 
           <Card title={t('settings.consent')}>
-            <span style={{ fontSize: theme.font.size.md, color: theme.font.color.tertiary }}>
+            <span style={{ fontSize: theme.font.size.md, color: theme.font.color.secondary }}>
               {t('settings.consentNote')}
             </span>
           </Card>
         </TabPanel>
       ) : null}
 
-      <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.tertiary }}>
+      <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.secondary }}>
         {t('chat.testAccount')}: {t(account?.isTestAccount === true ? 'common.yes' : 'common.no')}
       </span>
     </div>

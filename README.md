@@ -30,9 +30,15 @@ Developed by **Marcos Lisboa** at [Pixel Infinito](https://pixel.ao) · publishe
 
 The interface ships in **English and Portuguese**, following each user's locale.
 
+## Sending attachments
+
+Choose **Photo or video** or **Document**, select a device file, review it, add an optional caption, and send. Recent conversation files can also be reused. Template and campaign media headers use the same upload control; voice recordings upload directly through Twenty.
+
+No bucket setup or file URLs are needed. Files remain in Twenty storage and follow the app's existing sending and consent rules. Upload/download permissions are included in the WhatsApp Agent and Admin roles.
+
 ## Requirements
 
-- A Twenty workspace (cloud or self-hosted) whose public URL is reachable over HTTPS — Meta must be able to call your webhook.
+- A Twenty **2.54.0 or newer** workspace (cloud or self-hosted) whose public URL is reachable over HTTPS — Meta must be able to call your webhook.
 - A Meta Business account with an approved **WhatsApp Business phone number**.
 - A Meta app with the WhatsApp product and a system-user access token.
 
@@ -101,8 +107,7 @@ Per-number settings (throttle, default calling code, auto-assignment, contact au
 
 ```bash
 yarn install
-yarn twenty docker:start   # local Twenty server
-yarn twenty dev            # sync the app and watch
+yarn twenty app dev        # sync to a configured development workspace
 ```
 
 See `SETUP.md` for the full local guide, `specs/` for design and architecture notes, and `CHANGELOG.md` for notable changes. `yarn test:unit` runs the local test suite; `yarn test` runs integration tests against a disposable workspace.
@@ -116,3 +121,13 @@ See `SETUP.md` for the full local guide, `specs/` for design and architecture no
 ## License
 
 MIT © [Pixel Infinito](https://pixel.ao)
+
+## WhatsApp through Twenty MCP and AI agents
+
+The app exposes twelve WhatsApp tools, including the existing template tools, through Twenty’s own MCP and AI registry. Operators can work conversations and send every supported message type; admins can also manage templates, campaigns, consent, accounts and webhook recovery. Bulk/destructive operations require preview and explicit user approval.
+
+A tested local Docker setup uses `http://localhost:2021` (MCP `/mcp`); see the [verification report](reports/mcp-ai-tools-2026-11-03.md) and the prerequisite guide below.
+
+Install the [caller delegation v1 platform prerequisite](tools/twenty-caller-delegation/README.md) before applying the app. Stock Twenty 2.54 lacks the delegated identity required for restricted keys and autonomous agents; calls fail closed with `PLATFORM_UPGRADE_REQUIRED`. No new MCP server or Meta credentials in prompts are needed. Assign the appropriate WhatsApp role to each key/agent, refresh MCP discovery, and start with `app_whatsapp_get_capabilities`.
+
+See [the complete contracts and rollout procedure](specs/17-twenty-mcp-agent-messaging.md). The app includes a reusable WhatsApp skill. Offline checks never send messages; live validation needs a designated test recipient and campaign.

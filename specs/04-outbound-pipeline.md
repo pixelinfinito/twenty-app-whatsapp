@@ -117,10 +117,7 @@ Steps:
    (FR-OUT-1). Target: ≤ 3 s p95 (NFR-P3) — note this measures *acceptance by us*; the Meta
    round-trip happens in the sender and surfaces as the `accepted` tick.
 
-Media flow: the browser cannot read file bytes (`FileReader` is unavailable in the sandbox), so
-the composer uses the host `uploadFile()` function to put the file into Twenty storage first and
-sends only a `fileId`. `wa-outbound-sender` fetches it from storage and uploads it to Meta
-(AR-14).
+Media flow (D-70): a native file chooser passes a readable File to the host `uploadFile` API. The authenticated feed provides the real FILES field metadata ID. Chat and voice uploads attach to their queued message before scheduling; campaign headers attach to their saved campaign. Recent-file reuse makes an independent server-side copy because Twenty forbids attaching a permanent file to a second record. The sender reads each retained FILES value to mint a fresh signed download URL before uploading to Meta; scheduled sends never depend on preview URL lifetime.
 
 ---
 

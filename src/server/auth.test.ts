@@ -5,7 +5,6 @@ import {
   ForbiddenError,
   UnauthorizedError,
   authErrorResponse,
-  readBearerToken,
   requireRole,
   rolesForCaller,
   type Caller,
@@ -61,25 +60,6 @@ describe('requireRole', () => {
   });
 });
 
-describe('readBearerToken', () => {
-  it('reads the header whatever case the gateway used', () => {
-    expect(readBearerToken({ Authorization: 'Bearer abc' })).toBe('abc');
-    expect(readBearerToken({ authorization: 'Bearer abc' })).toBe('abc');
-    expect(readBearerToken({ AUTHORIZATION: 'bearer abc' })).toBe('abc');
-  });
-
-  /** Some callers send the raw token with no scheme; both forms are the token. */
-  it('accepts a bare token', () => {
-    expect(readBearerToken({ authorization: 'abc' })).toBe('abc');
-  });
-
-  it('treats an absent, empty or scheme-only header as no token', () => {
-    expect(readBearerToken(undefined)).toBeNull();
-    expect(readBearerToken({})).toBeNull();
-    expect(readBearerToken({ authorization: '' })).toBeNull();
-    expect(readBearerToken({ authorization: 'Bearer   ' })).toBeNull();
-  });
-});
 
 /**
  * D-53. The join that failed in production, and the reason it failed: the

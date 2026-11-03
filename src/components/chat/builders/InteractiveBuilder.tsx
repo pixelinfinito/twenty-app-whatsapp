@@ -116,7 +116,7 @@ export const InteractiveBuilder = ({
       }}
     >
       <p
-        style={{ margin: 0, fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}
+        style={{ margin: 0, fontSize: theme.font.size.xs, color: theme.font.color.secondary }}
       >
         {t('builder.idsAreAutomatic')}
       </p>
@@ -202,7 +202,7 @@ export const InteractiveBuilder = ({
             minWidth: 0,
           }}
         >
-          <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}>
+          <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
             {t('builder.preview')}
           </span>
           <div
@@ -541,7 +541,7 @@ const ListEditor = ({
           color:
             rows > INTERACTIVE_LIMITS.MAX_ROWS
               ? theme.font.color.danger
-              : theme.font.color.tertiary,
+              : theme.font.color.secondary,
         }}
       >
         <span style={{ flex: '1 1 auto' }}>

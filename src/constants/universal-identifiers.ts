@@ -56,7 +56,6 @@ export const LF_CONSENT_ROUTE = 'ea75ba39-8fde-4559-bb51-81a12ee67b14';
 export const LF_CONSENT_KEYWORD = 'c8e4a7b6-1d52-4f39-8a07-2b6e5d90c134';
 export const LF_CONSENT_BACKFILL = '90904cd6-e3ff-4778-9678-54fc10bf30aa';
 export const LF_INBOX_FEED_ROUTE = '75d66009-e7ba-473b-9995-08abe6fe2cbd';
-export const LF_UPLOAD_ROUTE = '1145a0b8-8a25-4210-9fb6-685a653f2864';
 export const LF_STATS_ROLLUP = 'a570be45-9bd2-491f-9405-6e1c681cf67f';
 export const LF_RETENTION_PURGE = '9f112ebd-68c1-478f-956b-285333a41e12';
 export const LF_WEBHOOK_REPLAY_ROUTE = '416e05c5-968a-462a-b0b8-48cc34c63d7f';

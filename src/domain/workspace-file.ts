@@ -42,7 +42,7 @@ export const isWorkspaceFileAddress = (raw: string | null | undefined): boolean 
 
     // `/files/` anywhere in the path, not only at the start: a deployment whose
     // API is mounted under a prefix serves `/api/files/…`.
-    return parsed.pathname.includes(FILE_STORE_SEGMENT);
+    return parsed.pathname.includes(FILE_STORE_SEGMENT) || /\/file\/files-field\/[0-9a-f-]{36}$/i.test(parsed.pathname);
   } catch {
     return false;
   }

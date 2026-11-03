@@ -72,7 +72,7 @@ const ActionButton = ({ action }: { action: MessageAction }) => {
     border: 'none',
     borderRadius: theme.border.radius.sm,
     background: 'transparent',
-    color: theme.font.color.tertiary,
+    color: theme.font.color.secondary,
     cursor: 'pointer',
     padding: 0,
   };
@@ -188,6 +188,13 @@ export const MessageActions = ({
   return (
     <div
       className="wa-thread-actions"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && picker !== 'closed') {
+          event.preventDefault();
+          event.stopPropagation();
+          setPickerState('closed');
+        }
+      }}
       role="group"
       aria-label={t('chat.action.forMessage')}
       // The containing block for the picker below. Without it the absolutely

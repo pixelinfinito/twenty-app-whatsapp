@@ -189,7 +189,7 @@ export const ContactsContent = ({
                 creating" is the whole of the rule (spec §"Shared contacts").
               */
               <span
-                style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}
+                style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}
               >
                 {t('chat.contactReview')}
               </span>
@@ -225,7 +225,7 @@ export const InteractiveContent = ({
           fontSize: tone === 'quiet' ? theme.font.size.xs : theme.font.size.sm,
           fontWeight:
             tone === 'strong' ? theme.font.weight.semiBold : theme.font.weight.regular,
-          color: tone === 'quiet' ? theme.font.color.tertiary : theme.font.color.primary,
+          color: tone === 'quiet' ? theme.font.color.secondary : theme.font.color.primary,
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}
@@ -249,7 +249,7 @@ export const InteractiveContent = ({
     >
       <span>{label}</span>
       {description === null ? null : (
-        <span style={{ color: theme.font.color.tertiary }}>{description}</span>
+        <span style={{ color: theme.font.color.secondary }}>{description}</span>
       )}
     </div>
   );
@@ -319,7 +319,7 @@ export const InteractiveContent = ({
               <Glyph name="listMessage" />
               {interactive.buttonText ?? t('chat.viewOptions')}
             </span>
-            <span style={{ color: theme.font.color.tertiary }}>
+            <span style={{ color: theme.font.color.secondary }}>
               {t('chat.listOptions', { count: rows.length })}
             </span>
           </button>
@@ -406,7 +406,7 @@ const FieldRow = ({ label, value }: { label: string; value: string }) => {
 
   return (
     <>
-      <dt style={{ color: theme.font.color.tertiary }}>{label}</dt>
+      <dt style={{ color: theme.font.color.secondary }}>{label}</dt>
       <dd style={{ margin: 0, color: theme.font.color.secondary, wordBreak: 'break-word' }}>
         {value}
       </dd>
@@ -459,7 +459,7 @@ export const SystemContent = ({ body, t }: { body: string | null; t: Translate }
         alignItems: 'center',
         gap: theme.spacing[1],
         fontSize: theme.font.size.xs,
-        color: theme.font.color.tertiary,
+        color: theme.font.color.secondary,
         fontStyle: 'italic',
       }}
     >

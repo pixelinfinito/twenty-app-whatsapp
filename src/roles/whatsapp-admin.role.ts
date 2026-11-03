@@ -1,4 +1,5 @@
-import { defineRole } from 'twenty-sdk/define';
+import { PERMISSION_WHATSAPP_OPERATOR, PERMISSION_WHATSAPP_ADMIN } from '../constants/tool-identifiers';
+import { SystemPermissionFlag, STANDARD_OBJECT, defineRole } from 'twenty-sdk/define';
 
 import {
   OBJ_ACCOUNT,
@@ -11,15 +12,6 @@ import {
   OBJ_WEBHOOK_EVENT,
   ROLE_ADMIN,
 } from 'src/constants/universal-identifiers';
-
-const readWrite = (objectUniversalIdentifier: string, universalIdentifier: string) => ({
-  universalIdentifier,
-  objectUniversalIdentifier,
-  canReadObjectRecords: true,
-  canUpdateObjectRecords: true,
-  canSoftDeleteObjectRecords: true,
-  canDestroyObjectRecords: false,
-});
 
 const readOnly = (objectUniversalIdentifier: string, universalIdentifier: string) => ({
   universalIdentifier,
@@ -49,14 +41,20 @@ export default defineRole({
     'Configure WhatsApp: connect numbers, publish templates, manage consent and campaigns, replay webhook events.',
   icon: 'IconShieldCog',
   canBeAssignedToUsers: true,
-  canBeAssignedToAgents: false,
-  canBeAssignedToApiKeys: false,
+  canBeAssignedToAgents: true,
+  canBeAssignedToApiKeys: true,
   canUpdateAllSettings: false,
+  canAccessAllTools: false,
   canReadAllObjectRecords: false,
   canUpdateAllObjectRecords: false,
   canSoftDeleteAllObjectRecords: false,
   canDestroyAllObjectRecords: false,
+  permissionFlagUniversalIdentifiers: [PERMISSION_WHATSAPP_OPERATOR, PERMISSION_WHATSAPP_ADMIN, SystemPermissionFlag.UPLOAD_FILE, SystemPermissionFlag.DOWNLOAD_FILE],
   objectPermissions: [
+    { universalIdentifier: '12758064-62d2-4726-bcd9-042f82fe945b', objectUniversalIdentifier: STANDARD_OBJECT.messageList.universalIdentifier, canReadObjectRecords: true, canUpdateObjectRecords: false, canSoftDeleteObjectRecords: false, canDestroyObjectRecords: false },
+    { universalIdentifier: '05951009-db9a-4088-adef-885ccf783140', objectUniversalIdentifier: STANDARD_OBJECT.messageListMember.universalIdentifier, canReadObjectRecords: true, canUpdateObjectRecords: false, canSoftDeleteObjectRecords: false, canDestroyObjectRecords: false },
+    { universalIdentifier: 'f49d74d1-e756-48fb-a88a-e707a673585a', objectUniversalIdentifier: STANDARD_OBJECT.person.universalIdentifier, canReadObjectRecords: true, canUpdateObjectRecords: false, canSoftDeleteObjectRecords: false, canDestroyObjectRecords: false },
+    { universalIdentifier: 'a943dc89-0a99-4681-b649-4a103cd74a50', objectUniversalIdentifier: STANDARD_OBJECT.workspaceMember.universalIdentifier, canReadObjectRecords: true, canUpdateObjectRecords: false, canSoftDeleteObjectRecords: false, canDestroyObjectRecords: false },
     /**
      * Threads are read-only for the same reason they are for agents: the
      * sender's binding re-check trusts `serviceWindowExpiresAt`, `isBlocked`
@@ -65,10 +63,11 @@ export default defineRole({
      * directly would be policy without validation.
      */
     readOnly(OBJ_THREAD, '3f7d2b8e-1a95-4c60-8e43-9b2f6d1a5c78'),
-    readWrite(OBJ_ACCOUNT, '6b1e9c4a-8d27-453f-9017-4a8c2e6b1d95'),
-    readWrite(OBJ_TEMPLATE, 'd8a3f6c1-4b79-4e02-8536-1c9b7e4a2f60'),
+    readOnly(OBJ_ACCOUNT, '6b1e9c4a-8d27-453f-9017-4a8c2e6b1d95'),
+    readOnly(OBJ_TEMPLATE, 'd8a3f6c1-4b79-4e02-8536-1c9b7e4a2f60'),
     /**
-     * Campaigns are editable but **not deletable through the Core API**.
+     * Campaigns and recipient rows are read-only through the Core API.
+     * All changes go through validated services, including confirmed AI launches.
      *
      * A record delete is a single gesture with no notion of state, so the
      * platform's own delete on a campaign record would remove a cancelled or
@@ -92,7 +91,7 @@ export default defineRole({
       universalIdentifier: '1c5a8e2f-7d93-4b46-9f28-6e3d0b7a4c19',
       objectUniversalIdentifier: OBJ_CAMPAIGN,
       canReadObjectRecords: true,
-      canUpdateObjectRecords: true,
+      canUpdateObjectRecords: false,
       canSoftDeleteObjectRecords: false,
       canDestroyObjectRecords: false,
     },
@@ -100,7 +99,7 @@ export default defineRole({
       universalIdentifier: '7e2b4d9a-3c86-4f15-8b70-5a1d9c3e6f42',
       objectUniversalIdentifier: OBJ_CAMPAIGN_RECIPIENT,
       canReadObjectRecords: true,
-      canUpdateObjectRecords: true,
+      canUpdateObjectRecords: false,
       canSoftDeleteObjectRecords: false,
       canDestroyObjectRecords: false,
     },
@@ -118,7 +117,7 @@ export default defineRole({
       objectUniversalIdentifier: OBJ_MESSAGE,
       canReadObjectRecords: true,
       canUpdateObjectRecords: false,
-      canSoftDeleteObjectRecords: true,
+      canSoftDeleteObjectRecords: false,
       canDestroyObjectRecords: false,
     },
     /**

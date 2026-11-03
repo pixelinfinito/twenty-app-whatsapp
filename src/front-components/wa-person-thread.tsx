@@ -31,7 +31,7 @@ const WaPersonThread = () => {
       : (context.recordId ?? null),
   );
 
-  return <ThreadView personId={personId} variant="tab" />;
+  return <ThreadView key={personId} personId={personId} variant="tab" />;
 };
 
 export default defineFrontComponent({

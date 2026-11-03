@@ -73,7 +73,7 @@ export type TemplateSendSource = {
   sourceKind: SourceKind;
   sentById: string | null;
   requestId: string | null;
-  channel: 'WORKFLOW_ACTION' | 'TWENTY_MCP';
+  channel: 'WORKFLOW_ACTION' | 'TWENTY_MCP' | 'TWENTY_AI';
   accountResolution: AccountResolution;
   templateResolution: TemplateResolution;
 };

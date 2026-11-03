@@ -14,6 +14,7 @@
  * server, never re-derived in the browser (AR-17).
  */
 export type MediaProjection = {
+  fileId?: string | null;
   kind: string | null;
   mimeType: string | null;
   fileName: string | null;

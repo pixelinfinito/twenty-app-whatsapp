@@ -1,3 +1,4 @@
+import { SurfaceStyles } from '../common/SurfaceStyles';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { openCommandConfirmationModal } from 'twenty-sdk/front-component';
 import { useTheme } from 'twenty-ui/theme-constants';
@@ -11,7 +12,7 @@ import { projectQuote } from '../../domain/feed/quote';
 import type { QuoteProjection } from '../../domain/feed/quote';
 import type { FieldError } from '../../domain/interactive/validate';
 import type { ResolvedParameters } from '../../domain/template-render';
-import { newClientToken, useActions, type SendOutcome } from '../common/actions';
+import { newClientToken, useActions, type SendOutcome, type ThreadActionName } from '../common/actions';
 import { refusalCopy, useCopy } from '../common/copy';
 import { Glyph } from '../common/icons';
 import { SURFACE_MAX_HEIGHT, SURFACE_MIN_HEIGHT } from '../common/surface';
@@ -81,6 +82,9 @@ export const ThreadView = ({
   const actions = useActions();
 
   const [isSending, setIsSending] = useState(false);
+  const sending = useRef(false);
+  const threadActing = useRef(false);
+  const [threadBusy, setThreadBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   /**
    * A failure from an action that is not an ordinary send, so it has no bubble
@@ -229,22 +233,24 @@ export const ThreadView = ({
     const rows: RecentAttachment[] = [];
     const seen = new Set<string>();
 
-    for (const message of [...feed.messages].reverse()) {
+    for (const message of feed.messages) {
       const media = message.media;
 
       if (media === null || media.url === null || !isWorkspaceFileAddress(media.url)) continue;
       if (media.isVoice) continue;
 
-      const kind = media.kind;
+      const kind = media.kind?.toLowerCase();
 
       if (kind !== 'image' && kind !== 'video' && kind !== 'audio' && kind !== 'document') {
         continue;
       }
-      if (seen.has(media.url)) continue;
+      const key = media.fileId ?? media.url.split('?')[0]!;
+      if (seen.has(key)) continue;
 
-      seen.add(media.url);
+      seen.add(key);
       rows.push({
         url: media.url,
+        fileId: media.fileId ?? undefined,
         filename: media.fileName,
         mediaKind: kind,
         sizeBytes: media.sizeBytes,
@@ -323,7 +329,8 @@ export const ThreadView = ({
       optimistic: (clientToken: string) => MessageProjection,
       call: (clientToken: string) => Promise<SendOutcome>,
     ): Promise<boolean> => {
-      if (thread === null) return false;
+      if (thread === null || sending.current) return false;
+      sending.current = true;
 
       const clientToken = newClientToken();
 
@@ -345,6 +352,7 @@ export const ThreadView = ({
 
         return false;
       } finally {
+        sending.current = false;
         setIsSending(false);
       }
     },
@@ -355,18 +363,19 @@ export const ThreadView = ({
     (body: string) => {
       const id = thread?.id;
 
-      if (id === undefined) return;
+      if (id === undefined) return Promise.resolve(false);
 
       const quote = replyTarget;
 
-      setReplyTarget(null);
-
-      void perform(
+      return perform(
         (clientToken) =>
           optimisticText({ threadId: id, clientToken, quote }, body),
         (clientToken) =>
           actions.sendText({ threadId: id, body, clientToken, contextWamid: quote?.wamid ?? null }),
-      );
+      ).then((accepted) => {
+        if (accepted) setReplyTarget((current) => current === quote ? null : current);
+        return accepted;
+      });
     },
     [actions, perform, replyTarget, thread],
   );
@@ -375,14 +384,12 @@ export const ThreadView = ({
     (templateId: string, parameters: ResolvedParameters) => {
       const id = thread?.id;
 
-      if (id === undefined) return;
+      if (id === undefined) return Promise.resolve(false);
 
       const template = templates.find((entry) => entry.id === templateId) ?? null;
       const quote = replyTarget;
 
-      setReplyTarget(null);
-
-      void perform(
+      return perform(
         (clientToken) =>
           optimisticTemplate(
             { threadId: id, clientToken, body: null, quote },
@@ -400,7 +407,10 @@ export const ThreadView = ({
             clientToken,
             contextWamid: quote?.wamid ?? null,
           }),
-      );
+      ).then((accepted) => {
+        if (accepted) setReplyTarget((current) => current === quote ? null : current);
+        return accepted;
+      });
     },
     [actions, perform, replyTarget, templates, thread],
   );
@@ -408,6 +418,7 @@ export const ThreadView = ({
   const sendMedia = useCallback(
     (input: {
       mediaKind: 'image' | 'video' | 'audio' | 'document';
+      fileId?: string;
       fileUrl?: string;
       filePath?: string;
       filename: string | null;
@@ -416,13 +427,11 @@ export const ThreadView = ({
     }) => {
       const id = thread?.id;
 
-      if (id === undefined) return;
+      if (id === undefined) return Promise.resolve(false);
 
       const quote = replyTarget;
 
-      setReplyTarget(null);
-
-      void perform(
+      return perform(
         (clientToken) =>
           optimisticMedia(
             { threadId: id, clientToken, quote },
@@ -442,6 +451,7 @@ export const ThreadView = ({
               spec: {
                 kind: 'media',
                 mediaKind: input.mediaKind,
+                fileId: input.fileId,
                 ...(input.fileUrl === undefined ? {} : { fileUrl: input.fileUrl }),
                 ...(input.filePath === undefined ? {} : { filePath: input.filePath }),
                 filename: input.filename,
@@ -455,6 +465,7 @@ export const ThreadView = ({
             threadId: id,
             clientToken,
             mediaKind: input.mediaKind,
+            fileId: input.fileId,
             ...(input.fileUrl === undefined ? {} : { fileUrl: input.fileUrl }),
             ...(input.filePath === undefined ? {} : { filePath: input.filePath }),
             filename: input.filename,
@@ -462,7 +473,10 @@ export const ThreadView = ({
             ...(input.voice === undefined ? {} : { voice: input.voice }),
             contextWamid: quote?.wamid ?? null,
           }),
-      );
+      ).then((accepted) => {
+        if (accepted) setReplyTarget((current) => current === quote ? null : current);
+        return accepted;
+      });
     },
     [actions, perform, replyTarget, thread],
   );
@@ -476,13 +490,11 @@ export const ThreadView = ({
     }) => {
       const id = thread?.id;
 
-      if (id === undefined) return;
+      if (id === undefined) return Promise.resolve(false);
 
       const quote = replyTarget;
 
-      setReplyTarget(null);
-
-      void perform(
+      return perform(
         (clientToken) => optimisticLocation({ threadId: id, clientToken, quote }, location),
         (clientToken) =>
           actions.sendLocation({
@@ -491,7 +503,10 @@ export const ThreadView = ({
             ...location,
             contextWamid: quote?.wamid ?? null,
           }),
-      );
+      ).then((accepted) => {
+        if (accepted) setReplyTarget((current) => current === quote ? null : current);
+        return accepted;
+      });
     },
     [actions, perform, replyTarget, thread],
   );
@@ -500,13 +515,11 @@ export const ThreadView = ({
     (contact: ContactCardProjection) => {
       const id = thread?.id;
 
-      if (id === undefined) return;
+      if (id === undefined) return Promise.resolve(false);
 
       const quote = replyTarget;
 
-      setReplyTarget(null);
-
-      void perform(
+      return perform(
         (clientToken) => optimisticContacts({ threadId: id, clientToken, quote }, [contact]),
         (clientToken) =>
           actions.sendContacts({
@@ -538,13 +551,16 @@ export const ThreadView = ({
             ],
             contextWamid: quote?.wamid ?? null,
           }),
-      );
+      ).then((accepted) => {
+        if (accepted) setReplyTarget((current) => current === quote ? null : current);
+        return accepted;
+      });
     },
     [actions, perform, replyTarget, thread],
   );
 
   /**
-   * The one send that reports back.
+   * Interactive sends also return field-addressed validation errors.
    *
    * A builder must not close on a refusal: the route's field-addressed errors
    * have nowhere to go once the form is gone, and the rep would be left with a
@@ -574,7 +590,7 @@ export const ThreadView = ({
           }),
       );
 
-      if (accepted) setReplyTarget(null);
+      if (accepted) setReplyTarget((current) => current === quote ? null : current);
 
       return accepted;
     },
@@ -789,8 +805,10 @@ export const ThreadView = ({
         if (kind === 'image' || kind === 'video' || kind === 'audio' || kind === 'document') {
           sendMedia({
             mediaKind: kind,
-            ...(typeof spec.fileUrl === 'string' ? { fileUrl: spec.fileUrl } : {}),
-            ...(typeof spec.filePath === 'string' ? { filePath: spec.filePath } : {}),
+            ...(message.media?.url ? { fileUrl: message.media.url } : {
+              ...(typeof spec.fileUrl === 'string' ? { fileUrl: spec.fileUrl } : {}),
+              ...(typeof spec.filePath === 'string' ? { filePath: spec.filePath } : {}),
+            }),
             filename: typeof spec.filename === 'string' ? spec.filename : null,
             caption: typeof spec.caption === 'string' ? spec.caption : null,
             ...(spec.voice === true ? { voice: true } : {}),
@@ -814,59 +832,47 @@ export const ThreadView = ({
    * host's modal, not `window.confirm`: a browser dialog blocks the worker's
    * whole message channel. Unblock stays one click, because it *is* the undo.
    */
-  const toggleBlock = useCallback(async () => {
-    if (thread === null) return;
-
-    if (!thread.isBlocked) {
-      const answer = await openCommandConfirmationModal({
-        title: t('chat.blockConfirmTitle'),
-        subtitle: t('chat.blockConfirmSubtitle'),
-        confirmButtonText: t('chat.block'),
-        confirmButtonAccent: 'danger',
-      });
-
-      // Anything that is not an explicit confirmation is a refusal.
-      if (answer !== 'confirm') return;
+  const runThreadAction = useCallback(async (
+    action: ThreadActionName,
+    input: Record<string, unknown> = {},
+    confirmBlock = false,
+  ) => {
+    if (thread === null || threadActing.current) return;
+    threadActing.current = true;
+    setThreadBusy(true);
+    setActionError(null);
+    try {
+      if (confirmBlock) {
+        const answer = await openCommandConfirmationModal({
+          title: t('chat.blockConfirmTitle'), subtitle: t('chat.blockConfirmSubtitle'),
+          confirmButtonText: t('chat.block'), confirmButtonAccent: 'danger',
+        });
+        if (answer !== 'confirm') return;
+      }
+      const outcome = await actions.threadAction(action, { threadId: thread.id, ...input });
+      if (!outcome.ok) setActionError(outcome.error ?? t('chat.actionFailed'));
+      else refreshAll();
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : t('chat.actionFailed'));
+    } finally {
+      threadActing.current = false;
+      setThreadBusy(false);
     }
-
-    await actions.threadAction(thread.isBlocked ? 'unblock' : 'block', {
-      threadId: thread.id,
-    });
-    refreshAll();
   }, [actions, refreshAll, t, thread]);
 
-  const toggleClose = useCallback(async () => {
-    if (thread === null) return;
+  const toggleBlock = useCallback(() => {
+    if (thread) void runThreadAction(thread.isBlocked ? 'unblock' : 'block', {}, !thread.isBlocked);
+  }, [runThreadAction, thread]);
 
-    await actions.threadAction(thread.status === 'CLOSED' ? 'reopen' : 'close', {
-      threadId: thread.id,
+  const toggleClose = useCallback(() => {
+    if (thread) void runThreadAction(thread.status === 'CLOSED' ? 'reopen' : 'close');
+  }, [runThreadAction, thread]);
+
+  const toggleAssign = useCallback(() => {
+    if (thread && viewerId) void runThreadAction('assign', {
+      assigneeId: thread.assigneeId === viewerId ? null : viewerId,
     });
-    refreshAll();
-  }, [actions, refreshAll, thread]);
-
-  /**
-   * Take the conversation, or give it back.
-   *
-   * `assigneeId: null` is the unassign, which is why the route documents the
-   * null rather than offering a second action. The button is only rendered
-   * when the server named the caller — with no `workspaceMemberId` there is
-   * nobody to assign *to*, and a button that silently assigned to null would
-   * look like it had worked.
-   */
-  const toggleAssign = useCallback(async () => {
-    if (thread === null || viewerId === null) return;
-
-    const mine = thread.assigneeId === viewerId;
-    const outcome = await actions.threadAction('assign', {
-      threadId: thread.id,
-      assigneeId: mine ? null : viewerId,
-    });
-
-    if (!outcome.ok) setActionError(outcome.error ?? t('chat.assignFailed'));
-    else setActionError(null);
-
-    refreshAll();
-  }, [actions, refreshAll, t, thread, viewerId]);
+  }, [runThreadAction, thread, viewerId]);
 
   /**
    * Opening a conversation with a contact who has none.
@@ -880,7 +886,9 @@ export const ThreadView = ({
     async (templateId: string, parameters: ResolvedParameters) => {
       const start = feed.data?.start;
 
-      if (start?.waId === null || start?.waId === undefined) return;
+      if (start?.waId === null || start?.waId === undefined || sending.current) return false;
+      sending.current = true;
+      setActionError(null);
 
       const clientToken = newClientToken();
 
@@ -903,9 +911,14 @@ export const ThreadView = ({
           setRefusal(outcome.code);
         } else {
           setRefusal(null);
-          setActionError(outcome.kind === 'invalid' ? t('builder.invalid') : outcome.message);
+          setActionError(outcome.kind === 'invalid' ? t('builder.invalid') : refusalCopy(t, outcome.message, outcome.detail));
         }
+        return outcome.ok;
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : t('error.unknown'));
+        return false;
       } finally {
+        sending.current = false;
         setIsSending(false);
       }
     },
@@ -946,7 +959,8 @@ export const ThreadView = ({
    */
   if (feed.isUnavailable) {
     return (
-      <div className="wa-thread-view" style={{ ...shell, justifyContent: 'center' }}>
+      <div className="wa-surface wa-thread-view" style={{ ...shell, justifyContent: 'center' }}>
+        <SurfaceStyles />
         <EmptyState
           icon="warning"
           title={t('common.unavailable')}
@@ -959,28 +973,38 @@ export const ThreadView = ({
     );
   }
 
-  if (feed.data !== null && thread === null) {
+  if (feed.data === null) {
     return (
-      <div className="wa-thread-view" style={{ ...shell, justifyContent: 'center' }}>
+      <div className="wa-surface wa-thread-view" style={{ ...shell, justifyContent: 'center' }} {...feed.rootProps}>
+        <SurfaceStyles />
+        <Banner>{t('common.loading')}</Banner>
+      </div>
+    );
+  }
+
+  if (thread === null) {
+    return (
+      <div className="wa-surface wa-thread-view" style={{ ...shell, justifyContent: 'center' }}>
+        <SurfaceStyles />
         {actionError === null ? null : <Banner tone="danger">{actionError}</Banner>}
         {refusal === null ? null : <Banner tone="danger">{t(`policy.${refusal}`)}</Banner>}
         <StartConversation
+          fieldMetadataId={feed.data?.uploadTargets?.messageMediaFieldMetadataId}
           policy={feed.data.policy}
           templates={templates}
           start={feed.data.start}
           canSend={canSend}
           isSending={isSending}
           t={t}
-          onSendTemplate={(templateId, parameters) =>
-            void startWithTemplate(templateId, parameters)
-          }
+          onSendTemplate={startWithTemplate}
         />
       </div>
     );
   }
 
   return (
-    <div className="wa-thread-view" style={shell} {...feed.rootProps}>
+    <div className="wa-surface wa-thread-view" style={shell} {...feed.rootProps}>
+      <SurfaceStyles />
       {feed.isSuspended ? (
         <div
           style={{
@@ -1042,6 +1066,7 @@ export const ThreadView = ({
       {thread === null ? null : (
         <ThreadHeader
           thread={thread}
+          busy={threadBusy}
           account={account}
           t={t}
           now={now}
@@ -1088,7 +1113,7 @@ export const ThreadView = ({
         replyTarget={replyTarget}
         person={person}
         recentFiles={recentFiles}
-        onFileSearch={actions.fileSearch}
+        fieldMetadataId={feed.data?.uploadTargets?.messageMediaFieldMetadataId}
         onSendText={sendText}
         onSendTemplate={sendTemplate}
         onSendMedia={sendMedia}

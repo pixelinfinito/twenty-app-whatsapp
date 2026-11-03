@@ -357,10 +357,10 @@ describe('openedFrom', () => {
    * whole ISO instant leaves the box empty, which reads as "not scheduled" for
    * a campaign that is.
    */
-  it('trims a stored instant to what a datetime-local input can read', () => {
-    expect(
-      openedFrom({ id: 'c-1', scheduledAt: '2026-09-01T09:30:00.000Z' }, templates).scheduledAt,
-    ).toBe('2026-09-01T09:30');
+  it('restores a stored instant in the browser time zone', () => {
+    const instant = '2026-09-01T09:30:00.000Z';
+    const local = openedFrom({ id: 'c-1', scheduledAt: instant }, templates).scheduledAt;
+    expect(new Date(local).toISOString()).toBe(instant);
   });
 
   it('joins a manual audience back into the text area it came from', () => {

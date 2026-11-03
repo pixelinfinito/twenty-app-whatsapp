@@ -1,4 +1,5 @@
 import { redactForLog, logger } from './logger';
+import { toolScope } from './tool-scope';
 
 /**
  * Audited actions (SEC-10, SEC-12).
@@ -109,6 +110,9 @@ export const audit = ({
     actorId,
     occurredAt: occurredAt.toISOString(),
     ...subject,
-    details: redactForLog(details),
+    details: redactForLog({
+      ...details,
+      ...(toolScope() ? { initiatedBy: toolScope()!.principal } : {}),
+    }),
   });
 };

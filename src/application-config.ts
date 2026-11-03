@@ -24,6 +24,7 @@ import {
 export default defineApplication({
   universalIdentifier: APPLICATION_UNIVERSAL_IDENTIFIER,
   displayName: APP_DISPLAY_NAME,
+  requestedCapabilities: ['microphone'],
   description: APP_DESCRIPTION,
   /**
    * The filename carries the cache bust, and it has to.
@@ -41,8 +42,6 @@ export default defineApplication({
    * *not* used there.
    */
   logo: 'public/logo-whatsapp.svg',
-  aboutDescription:
-    'A production-ready Meta WhatsApp Cloud API app for Twenty. It ships with an inbox, template synchronization, consent-aware messaging, and campaign tooling with strong webhook observability.',
   author: 'Pixel Infinito',
   websiteUrl: 'https://pixel.ao',
   /**

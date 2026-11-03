@@ -66,6 +66,8 @@ import { EMPTY_VARIABLE_SPEC } from './wa-outbound-sender';
 
 export type SnapshotPayload = {
   campaignId: string;
+  /** Internal, server-captured caller-visible audience. Never supplied by an AI schema. */
+  authorizedPersonIds?: string[];
   cursor?: unknown;
   stats?: SnapshotStats;
   page?: number;
@@ -319,6 +321,10 @@ export const runSnapshot = async (
 
   try {
     read = await readAudiencePage({ definition, cursor });
+    if (payload.authorizedPersonIds) {
+      const allowed = new Set(payload.authorizedPersonIds);
+      read.people = read.people.filter((person) => allowed.has(person.id));
+    }
   } catch (error) {
     if (error instanceof AudienceError) {
       return fail([error.message, ...error.reasons].join(' · '));
@@ -382,6 +388,7 @@ export const runSnapshot = async (
         cursor: read.nextCursor,
         stats: decided.stats,
         page: page + 1,
+        ...(payload.authorizedPersonIds ? { authorizedPersonIds: payload.authorizedPersonIds } : {}),
       },
       delayMs: PAGE_DELAY_MS,
       correlationId: campaign.id,

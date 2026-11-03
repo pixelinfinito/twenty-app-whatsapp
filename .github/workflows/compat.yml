@@ -49,7 +49,7 @@ jobs:
 
       - name: Spawn Twenty test instance
         id: twenty
-        uses: twentyhq/twenty/.github/actions/spawn-twenty-app-dev-test@044fc2d38908f711f5f073c345b656e13b541b8b # main 2026-08-16
+        uses: twentyhq/twenty/.github/actions/spawn-twenty-app-dev-test@c75ef7bfd0589219bd22e8f134df458af0af3445 # twenty/v2.54.0
         with:
           twenty-version: ${{ steps.target.outputs.version }}
 
@@ -82,6 +82,9 @@ jobs:
         env:
           TWENTY_API_URL: ${{ steps.twenty.outputs.server-url }}
           TWENTY_API_KEY: ${{ steps.twenty.outputs.api-key }}
+
+      - name: Typecheck generated workspace clients
+        run: yarn typecheck
 
   # A failure that only exists in a log nobody reads is not a tripwire. It has
   # to become an issue — but *one* issue: a weekly job against a break that

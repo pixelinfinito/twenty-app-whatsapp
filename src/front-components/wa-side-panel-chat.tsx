@@ -16,7 +16,7 @@ import { FC_SIDE_PANEL_CHAT } from '../constants/universal-identifiers';
 const WaSidePanelChat = () => {
   const selected = useSelectedRecordIds();
 
-  return <ThreadView personId={selected[0] ?? null} variant="panel" />;
+  return <ThreadView key={selected[0] ?? 'empty'} personId={selected[0] ?? null} variant="panel" />;
 };
 
 export default defineFrontComponent({

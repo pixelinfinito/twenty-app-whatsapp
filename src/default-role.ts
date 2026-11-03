@@ -1,3 +1,4 @@
+import { PERMISSION_WHATSAPP_OPERATOR, PERMISSION_WHATSAPP_ADMIN } from './constants/tool-identifiers';
 import { SystemPermissionFlag, defineApplicationRole } from 'twenty-sdk/define';
 
 import { APP_DISPLAY_NAME, DEFAULT_ROLE_UNIVERSAL_IDENTIFIER } from 'src/constants/universal-identifiers';
@@ -70,6 +71,7 @@ export default defineApplicationRole({
   canDestroyAllObjectRecords: true,
   canUpdateAllSettings: false,
   permissionFlagUniversalIdentifiers: [
+    PERMISSION_WHATSAPP_OPERATOR, PERMISSION_WHATSAPP_ADMIN,
     SystemPermissionFlag.UPLOAD_FILE,
     SystemPermissionFlag.DOWNLOAD_FILE,
     SystemPermissionFlag.ROLES,

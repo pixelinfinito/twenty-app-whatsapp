@@ -491,6 +491,7 @@ describe('deciding what needs a media upload', () => {
 
     expect(mediaHandleFor({ kind: 'template', templateId: 't1' }, template)).toEqual({
       kind: 'video',
+      fileId: 'file-record-1',
       url: null,
       path: 'files/promo.mp4',
     });

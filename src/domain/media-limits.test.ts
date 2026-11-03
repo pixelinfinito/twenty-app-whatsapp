@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   MEDIA_LIMITS,
   MEDIA_REJECTION,
-  mediaKindForFilename,
   mediaKindForHeaderFormat,
   normaliseMimeType,
   validateOutboundMedia,
@@ -12,6 +11,11 @@ import {
 const MB = 1024 * 1024;
 
 describe('outbound media limits', () => {
+  it('rejects empty or invalid downloaded sizes before sending', () => {
+    for (const sizeBytes of [0, -1, Number.NaN]) {
+      expect(validateOutboundMedia({ kind: 'document', mimeType: 'application/pdf', sizeBytes }).ok).toBe(false);
+    }
+  });
   it('accepts a jpeg photo under 5 MB', () => {
     expect(
       validateOutboundMedia({ kind: 'image', mimeType: 'image/jpeg', sizeBytes: 4 * MB }),
@@ -140,29 +144,4 @@ describe('template header formats', () => {
       expect(mediaKindForHeaderFormat(format)).toBeNull();
     },
   );
-});
-
-describe('mediaKindForFilename', () => {
-  it('suggests media kinds only for formats Meta accepts in that kind', () => {
-    expect(mediaKindForFilename('photo.jpg')).toBe('image');
-    expect(mediaKindForFilename('attachment/uuid/Scan.PNG')).toBe('image');
-    expect(mediaKindForFilename('clip.mp4')).toBe('video');
-    expect(mediaKindForFilename('note.m4a')).toBe('audio');
-    expect(mediaKindForFilename('song.mp3')).toBe('audio');
-  });
-
-  /**
-   * The same conservatism the device picker had: a webp or a .mov *sent as*
-   * image/video is refused by Meta after the fact; suggested as a document it
-   * arrives. The suggestion is a default the rep can override, so the cheap
-   * error is the right one.
-   */
-  it('suggests document for everything Meta would refuse, and for no extension', () => {
-    expect(mediaKindForFilename('photo.webp')).toBe('document');
-    expect(mediaKindForFilename('clip.mov')).toBe('document');
-    expect(mediaKindForFilename('contract.pdf')).toBe('document');
-    expect(mediaKindForFilename('README')).toBe('document');
-    expect(mediaKindForFilename(null)).toBe('document');
-    expect(mediaKindForFilename('')).toBe('document');
-  });
 });

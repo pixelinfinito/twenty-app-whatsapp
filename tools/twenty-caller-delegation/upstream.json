@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/twentyhq/twenty",
+  "ref": "twenty/v2.54.0",
+  "commit": "c75ef7bfd0589219bd22e8f134df458af0af3445",
+  "baseImage": "twentycrm/twenty-app-dev:v2.54.0",
+  "contractVersion": 1
+}

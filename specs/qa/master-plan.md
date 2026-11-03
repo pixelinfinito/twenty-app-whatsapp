@@ -5,7 +5,7 @@
 | Status | Release-control specification |
 | Owner | QA / Product Engineering |
 | Last reviewed | 2026-08-18 |
-| Applies to | `twenty-whatsapp` 0.1.x on Twenty 2.31.x and Meta Graph API v26.0 |
+| Applies to | `twenty-whatsapp` 0.1.x on Twenty 2.54.x and Meta Graph API v26.0 |
 
 ## 1. Purpose and quality bar
 
@@ -486,3 +486,13 @@ full customer numbers or unredacted webhook bodies.
 - [ ] No uncaught console error, request loop, secret leak, duplicate send or unexplained data loss.
 - [ ] Targeted regressions in section 7 have an explicit result and owner.
 - [ ] Release checklist A–C is signed; production smoke scope and rollback owner are named.
+
+
+## Native upload acceptance (D-70)
+
+- In sandboxed Chromium, choose JPEG/PNG, MP4, audio and PDF device files; verify preview/filename, caption where applicable, upload success and enabled Send.
+- Replace/remove/reselect the same file, cancel the chooser, dismiss during upload, switch templates, and double-click Send. No stale completion or duplicate send may occur.
+- Empty, oversized and incompatible template-header files fail before upload. Failed uploads preserve captions and can retry.
+- Reload queued messages and saved campaign drafts; verify FILES associations, recent-file reuse and scheduled delivery without depending on preview URL expiry.
+- Repeat under WhatsApp Agent permissions, in Portuguese and English, and in narrow widgets. No S3 settings, workspace search, URL inputs or manual type selection remain.
+- Confirm actual Meta delivery only with an explicitly authorized test recipient and configured test credentials, before release.

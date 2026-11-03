@@ -32,11 +32,8 @@
     "dist",
     "**/*.test.ts",
     "**/*.spec.ts",
-    "**/*.integration-test.ts"
+    "**/*.integration-test.ts",
+    "src/__tests__/global-setup.ts"
   ],
-  "references": [
-    {
-      "path": "./tsconfig.spec.json"
-    }
-  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

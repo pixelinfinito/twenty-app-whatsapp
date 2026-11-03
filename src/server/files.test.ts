@@ -343,3 +343,11 @@ describe('downloading a workspace file', () => {
     ).rejects.toThrow(/404/);
   });
 });
+
+
+it('accepts only the Twenty 2.54 files-field download route, rebuilding its origin', () => {
+  const id = 'f8fbe965-b9d1-48f6-ba60-d57626818508';
+  expect(resolveFileUrl({ url: `https://front.example.test/file/files-field/${id}?token=signed` })).toBe(`https://crm.example.test/file/files-field/${id}?token=signed`);
+  expect(() => resolveFileUrl({ url: `https://crm.example.test/file/app-tarball/${id}?token=x` })).toThrow(WorkspaceFileError);
+  expect(() => resolveFileUrl({ url: 'https://crm.example.test/file/files-field/not-an-id' })).toThrow(WorkspaceFileError);
+});

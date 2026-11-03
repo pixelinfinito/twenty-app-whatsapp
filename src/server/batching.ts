@@ -52,9 +52,9 @@ export type RetryOptions = {
 };
 
 export const withRetry = async <T>(
-  operation: () => Promise<T>,
+  operation: () => T,
   { maxAttempts = 4, baseDelayMs = 500, label = 'core' }: RetryOptions = {},
-): Promise<T> => {
+): Promise<Awaited<T>> => {
   let lastError: unknown;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {

@@ -93,6 +93,8 @@ export type FeedEnvelope = {
    * rarely (`mergeEnvelope`).
    */
   capabilities?: ThreadCapabilities;
+  /** Workspace-specific FILES field IDs for host uploads, retained across deltas. */
+  uploadTargets?: { messageMediaFieldMetadataId: string | null; campaignHeaderMediaFieldMetadataId: string | null };
   templates?: FeedTemplate[];
   campaign?: Record<string, unknown>;
   campaigns?: Record<string, unknown>[];
@@ -199,7 +201,7 @@ export const mergeEnvelope = (
   current: FeedEnvelope | null,
   next: FeedEnvelope,
 ): FeedEnvelope =>
-  current === null ? next : { ...next, templates: next.templates ?? current.templates };
+  current === null ? next : { ...next, templates: next.templates ?? current.templates, uploadTargets: next.uploadTargets ?? current.uploadTargets };
 
 const numberVariable = (name: string, fallback: number): number => {
   const raw = getApplicationVariable(name);
@@ -229,11 +231,12 @@ export const useFeed = ({
   const [messages, setMessages] = useState<MessageProjection[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSuspended, setIsSuspended] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(enabled);
   const [hasOlder, setHasOlder] = useState(false);
 
   const client = useMemo(() => new RestApiClient(), []);
-  const inFlight = useRef(false);
+  const inFlight = useRef<object | null>(null);
+  const refreshQueued = useRef(false);
   const since = useRef<string | null>(null);
   const olderCursor = useRef<string | null>(null);
   const failures = useRef(0);
@@ -255,9 +258,9 @@ export const useFeed = ({
 
   const fetchOnce = useCallback(
     async (mode: 'full' | 'delta' | 'older'): Promise<void> => {
-      if (inFlight.current) return;
-
-      inFlight.current = true;
+      if (inFlight.current !== null) return;
+      const request = {};
+      inFlight.current = request;
 
       const mine = generation.current;
 
@@ -318,7 +321,7 @@ export const useFeed = ({
          * Asking again immediately is the point of saying so.
          */
         if (envelope.truncated === true) {
-          inFlight.current = false;
+          inFlight.current = null;
           await fetchOnce('delta');
         }
       } catch (caught) {
@@ -327,8 +330,14 @@ export const useFeed = ({
         failures.current += 1;
         setError(caught instanceof Error ? caught.message : String(caught));
       } finally {
-        inFlight.current = false;
-        setIsLoading(false);
+        if (mine === generation.current && inFlight.current === request) {
+          inFlight.current = null;
+          setIsLoading(false);
+          if (refreshQueued.current) {
+            refreshQueued.current = false;
+            void fetchOnce(since.current === null ? 'full' : 'delta');
+          }
+        }
       }
     },
     [archived, by, client, counts, filter, id, limit, scope],
@@ -336,6 +345,11 @@ export const useFeed = ({
 
   const refresh = useCallback(() => {
     touch();
+    setIsSuspended(false);
+    if (inFlight.current !== null) {
+      refreshQueued.current = true;
+      return;
+    }
     void fetchOnce(since.current === null ? 'full' : 'delta');
   }, [fetchOnce, touch]);
 
@@ -365,13 +379,20 @@ export const useFeed = ({
   // still in flight is discarded rather than merged into the wrong thread.
   useEffect(() => {
     generation.current += 1;
+    inFlight.current = null;
+    refreshQueued.current = false;
     since.current = null;
     olderCursor.current = null;
     failures.current = 0;
     setMessages([]);
     setData(null);
     setHasOlder(false);
-  }, [scope, id, by, filter, archived]);
+    setError(null);
+    setIsLoading(enabled);
+    setIsSuspended(false);
+    lastTouch.current = Date.now();
+    return () => { generation.current += 1; };
+  }, [scope, id, by, filter, archived, enabled, counts, limit]);
 
   useEffect(() => {
     if (!enabled || isSuspended) return;

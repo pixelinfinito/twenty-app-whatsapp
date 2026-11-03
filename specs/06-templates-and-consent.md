@@ -105,8 +105,7 @@ Rendered by `src/components/templates/` inside the chat panel and the campaign b
   | Person field | field picker limited to the allow-list (§5) | resolved from the linked Person |
   | Static | text input marked as reusable | the literal, saved with the campaign |
 
-- **Media header**: a file picker using the host `uploadFile()` function (the sandbox has no
-  `FileReader`), or a previously uploaded file; validated against Meta's caps before enabling
+- **Media header**: a file picker using the host `uploadFile()` function (using a native readable File), or a previously uploaded file; validated against Meta's caps before enabling
   Send (AR-16).
 - **Validation**: Send is disabled until every required variable resolves non-empty. Meta rejects
   templates with empty parameters, and WhatsApp additionally rejects parameters containing

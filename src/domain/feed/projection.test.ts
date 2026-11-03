@@ -69,6 +69,7 @@ describe('projectMessage', () => {
 
     expect(projected.media).toEqual({
       kind: 'IMAGE',
+      fileId: 'f1',
       mimeType: 'image/jpeg',
       fileName: 'photo.jpg',
       sizeBytes: 51_200,

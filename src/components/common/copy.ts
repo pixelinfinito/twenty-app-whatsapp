@@ -29,6 +29,24 @@ export const langOf = (locale: string | null | undefined): Lang =>
 type Entry = { pt: string; en: string };
 
 const COPY = {
+  'campaign.saveDraft': { pt: 'Guardar rascunho', en: 'Save draft' },
+  'campaign.optionsFailed': { pt: 'Não foi possível carregar as vistas e os campos. Tente novamente.', en: 'Could not load views and fields. Try again.' },
+
+  'chat.actionFailed': { pt: 'Não foi possível atualizar a conversa. Tente novamente.', en: 'Could not update the conversation. Try again.' },
+  'upload.hint.image': { pt: 'JPG ou PNG · até 5 MB', en: 'JPG or PNG · up to 5 MB' },
+  'upload.hint.video': { pt: 'MP4 ou 3GP · até 16 MB', en: 'MP4 or 3GP · up to 16 MB' },
+  'upload.hint.audio': { pt: 'AAC, AMR, MP3, MP4, OGG ou Opus · até 16 MB', en: 'AAC, AMR, MP3, MP4, OGG or Opus · up to 16 MB' },
+  'upload.hint.document': { pt: 'Documento · até 100 MB', en: 'Document · up to 100 MB' },
+  'upload.hint.auto': { pt: 'Fotos: 5 MB · vídeo e áudio: 16 MB · documentos: 100 MB', en: 'Photos: 5 MB · video and audio: 16 MB · documents: 100 MB' },
+
+  'chat.composeHint': { pt: 'Enter para enviar · Shift+Enter para nova linha', en: 'Enter to send · Shift+Enter for a new line' },
+  'chat.conversation': { pt: 'Mensagens da conversa', en: 'Conversation messages' },
+  'campaign.scheduleInvalid': { pt: 'Escolha uma data e hora futuras, ou deixe em branco para enviar após o lançamento.', en: 'Choose a future date and time, or leave blank to send after launch.' },
+  'campaign.searchFailed': { pt: 'Não foi possível procurar contactos. Tente novamente.', en: 'Could not search contacts. Try again.' },
+  'campaign.previewFailed': { pt: 'Não foi possível carregar a pré-visualização. Tente novamente antes de continuar.', en: 'Could not load the preview. Try again before continuing.' },
+  'common.copied': { pt: 'Copiado', en: 'Copied' },
+  'common.copyFailed': { pt: 'Não foi possível copiar. Selecione e copie o texto.', en: 'Could not copy. Select and copy the text.' },
+
   // ─── Policy denials — the composer's disabled states (specs/08 §3.3) ──────
   'policy.ACCOUNT_NOT_CONNECTED': {
     pt: 'O número de WhatsApp não está ligado.',
@@ -223,10 +241,6 @@ const COPY = {
   'chat.templateHeaderMedia': {
     pt: 'Ficheiro do cabeçalho, guardado no Twenty',
     en: 'Header file, stored in Twenty',
-  },
-  'chat.fileUrlPlaceholder': {
-    pt: 'https://…/files/attachment/…',
-    en: 'https://…/files/attachment/…',
   },
   'chat.templateButton': { pt: 'Botão', en: 'Button' },
   'chat.templateButtonUrl': { pt: 'Ligação do botão', en: 'Button link' },
@@ -463,24 +477,21 @@ const COPY = {
     pt: 'Indisponível nesta conversa',
     en: 'Not available in this conversation',
   },
-  /**
-   * Two sources, not three: "from this device" was tried and retired — the
-   * sandbox bridge hands a picked file's metadata over without its bytes
-   * (D-53 field correction, specs/00), so every device pick failed.
-   */
+  'upload.chooseRecent': { pt: 'Escolher um ficheiro recente', en: 'Choose a recent file' },
+  'upload.choose': { pt: 'Escolher ficheiro', en: 'Choose file' },
+  'upload.replace': { pt: 'Trocar ficheiro', en: 'Replace file' },
+  'upload.remove': { pt: 'Remover', en: 'Remove' },
+  'upload.retry': { pt: 'Tentar novamente', en: 'Retry upload' },
+  'upload.device': { pt: 'Deste dispositivo', en: 'From this device' },
+  'upload.uploading': { pt: 'A carregar ficheiro…', en: 'Uploading file…' },
+  'upload.error.empty': { pt: 'O ficheiro está vazio. Escolha outro.', en: 'This file is empty. Choose another.' },
+  'upload.error.MEDIA_TOO_LARGE': { pt: 'O ficheiro ultrapassa o limite deste tipo de anexo.', en: 'This file exceeds the size limit for this attachment type.' },
+  'upload.error.MEDIA_WRONG_TYPE': { pt: 'Este formato não é compatível com este anexo. Escolha outro ficheiro.', en: 'This format is not supported for this attachment. Choose another file.' },
+  'upload.error.unavailable': { pt: 'Não foi possível preparar o carregamento. Atualize a página ou contacte o administrador.', en: 'Uploads could not be prepared. Refresh the page or contact your administrator.' },
+  'upload.error.invalid-params': { pt: 'Não foi possível carregar este ficheiro. Escolha outro ou atualize a página.', en: 'This file could not be uploaded. Choose another or refresh the page.' },
+  'upload.error.upload-failed': { pt: 'O carregamento falhou. Verifique a ligação e as permissões de ficheiros e tente novamente.', en: 'Upload failed. Check your connection and file permissions, then retry.' },
   'chat.sourceLabel': { pt: 'Origem do ficheiro', en: 'File source' },
   'chat.source.recent': { pt: 'Recentes da conversa', en: 'Recent in this chat' },
-  'chat.source.link': { pt: 'Já no Twenty', en: 'Already in Twenty' },
-  // ─── The workspace-file picker inside "already in Twenty" ─────────────────
-  'chat.fileSearchLabel': {
-    pt: 'Procurar ficheiros no Twenty',
-    en: 'Search files in Twenty',
-  },
-  'chat.fileSearching': { pt: 'A procurar…', en: 'Searching…' },
-  'chat.fileSearchNone': {
-    pt: 'Nenhum ficheiro corresponde. Cole o endereço abaixo.',
-    en: 'No files match. Paste the address below.',
-  },
   'chat.recentNone': {
     pt: 'Ainda não há ficheiros nesta conversa.',
     en: 'No files in this conversation yet.',
@@ -491,25 +502,8 @@ const COPY = {
   },
 
   // ─── Sending media from Twenty's own files ────────────────────────────────
-  'chat.fileUrlLabel': { pt: 'Endereço do ficheiro no Twenty', en: 'Twenty file URL' },
-  'chat.fileUrlHint': {
-    pt: 'Abra o ficheiro a partir do registo no Twenty e copie o endereço da barra do navegador. Tem de conter /files/.',
-    en: 'Open the file from its record in Twenty and copy the address from the browser bar. It has to contain /files/.',
-  },
-  'chat.fileNameLabel': { pt: 'Nome do ficheiro', en: 'File name' },
   'chat.captionLabel': { pt: 'Legenda (opcional)', en: 'Caption (optional)' },
-  'chat.mediaKindLabel': { pt: 'Tipo de anexo', en: 'Attachment type' },
   'chat.sendAttachment': { pt: 'Enviar anexo', en: 'Send attachment' },
-  'chat.fileUrlRequired': {
-    pt: 'Indique o endereço do ficheiro.',
-    en: 'Enter the file’s address.',
-  },
-  'chat.fileUrlInvalid': {
-    pt: 'Este endereço não é válido.',
-    en: 'That address is not valid.',
-  },
-
-  // ─── Voice recording ──────────────────────────────────────────────────────
   'chat.recordStart': { pt: 'Gravar mensagem de voz', en: 'Record a voice message' },
   'chat.recordStop': { pt: 'Parar gravação', en: 'Stop recording' },
   'chat.recording': { pt: 'A gravar… {duration}', en: 'Recording… {duration}' },

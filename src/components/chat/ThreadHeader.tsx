@@ -21,6 +21,7 @@ import { Glyph, ICON, type IconName } from '../common/icons';
 
 export type ThreadHeaderProps = {
   thread: ThreadProjection;
+  busy?: boolean;
   account: AccountProjection | null;
   t: Translate;
   now: Date;
@@ -71,6 +72,7 @@ const consentTag = (consent: string): { icon: IconName; color: 'green' | 'red' |
 
 export const ThreadHeader = ({
   thread,
+  busy = false,
   account,
   t,
   now,
@@ -142,7 +144,7 @@ export const ThreadHeader = ({
         >
           {name === '' ? displayPhone(thread.waId) : name}
         </span>
-        <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.tertiary }}>
+        <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.secondary }}>
           {displayPhone(thread.dialablePhone ?? thread.waId)}
         </span>
 
@@ -192,6 +194,7 @@ export const ThreadHeader = ({
         {onAssign === undefined ? null : (
           <button
             type="button"
+              disabled={busy}
             onClick={onAssign}
             aria-label={t(mine ? 'chat.unassign' : 'chat.assignToMe')}
             style={button}
@@ -204,6 +207,7 @@ export const ThreadHeader = ({
         {onToggleBlock === undefined ? null : (
           <button
             type="button"
+              disabled={busy}
             onClick={onToggleBlock}
             aria-label={t(thread.isBlocked ? 'chat.unblock' : 'chat.block')}
             style={
@@ -220,6 +224,7 @@ export const ThreadHeader = ({
         {onClose === undefined ? null : (
           <button
             type="button"
+              disabled={busy}
             onClick={onClose}
             aria-label={t(thread.status === 'CLOSED' ? 'chat.reopen' : 'chat.close')}
             style={button}

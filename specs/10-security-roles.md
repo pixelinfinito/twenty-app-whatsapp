@@ -64,23 +64,23 @@ every handler the data model, roles and billing in exchange for one file upload.
 
 | Object | Read | Update | Delete |
 |---|---|---|---|
-| whatsappThread | ✅ | ✅ (assignee, status, unread) | ❌ |
+| whatsappThread | ✅ | ❌ (assignment, status and unread changes go through application routes) | ❌ |
 | whatsappMessage | ✅ | ❌ (messages are written by the app only) | ❌ |
 | whatsappTemplate | ✅ | ❌ (cannot publish) | ❌ |
 | whatsappAccount | ✅ | ❌ | ❌ |
 | whatsappCampaign / Recipient | ✅ | ❌ | ❌ |
 | whatsappConsentEvent | ✅ | ❌ (creation goes through the audited route) | ❌ |
 | whatsappWebhookEvent | ❌ | ❌ | ❌ |
-| person | ✅ | ✅ | ❌ |
+| person | ✅ | ❌ (changes go through app operations) | ❌ |
 
 ### 3.3 `WhatsApp Admin` (`ROLE_ADMIN`)
 
-Everything the agent has, plus: update `whatsappAccount` and `whatsappTemplate`
-(incl. `publishedToCrm`), full campaign control, consent import, webhook-event read and replay,
-and the app's settings section.
+Everything the agent has, plus full campaign control, template/account administration, consent import, webhook-event read and replay, and application settings, through validated app operations. WhatsApp objects remain read-only through the Core API so generic MCP CRUD cannot bypass policy or confirmations.
+
+Both user roles explicitly grant `UPLOAD_FILE` and `DOWNLOAD_FILE`. Message and thread records remain read-only, including deletion; authenticated application routes perform their writes.
 
 **Deleting a campaign is withheld from the role and moved into the route.** `whatsappCampaign` and
-`whatsappCampaignRecipient` are updatable but not deletable through the Core API, because a record
+`whatsappCampaignRecipient` are neither updatable nor deletable through the Core API, because a record
 delete is one gesture with no notion of state: it would remove a cancelled or completed campaign —
 the counters, exclusion breakdown and recipient rows the launch audit line refers to — as readily as
 an untouched draft. Deleting a campaign that never launched is legitimate and stays possible through
@@ -128,7 +128,6 @@ Route-by-route requirement:
 | `/whatsapp/campaign` (all actions) | **admin** (SEC-12) |
 | `/whatsapp/account` (connect, test, disconnect) | **admin** |
 | `/whatsapp/template` (publish, sync, submit) | **admin** |
-| `/whatsapp/upload` (attachment upload) | agent |
 | `/whatsapp/replay` (list, replay, resync) | **admin** — the raw log holds message bodies, phone numbers and profile names, so even reading it is an operator's job |
 | `/whatsapp/verify` | none (unauthenticated by design; protected by the verify token) |
 
@@ -290,3 +289,9 @@ Campaign launch is the highest-stakes entry: it records the full `audienceDefini
 | Media path traversal on stored filenames | Storage filename derived from the wamid, never from sender input (03 §8) |
 | Runaway spend | Pre-flight cost display, tier reserve, circuit breaker, admin-only launch (07) |
 | Number suspension through misuse | Consent gating, RED blocks, quality auto-pause, admin-gated templates (R-5, R-11) |
+
+D-70: Twenty 2.54 HTTP route handlers use trusted execution-context identity instead of forwarded credentials. WhatsApp Agent/Admin roles include UPLOAD_FILE and DOWNLOAD_FILE; protected records remain writable only by the application.
+
+### AI and MCP caller delegation
+
+The roles are also assignable to AI agents and API keys. `WHATSAPP_OPERATOR`/`WHATSAPP_ADMIN` grants authorize AI tool operations; admin includes operator. Person, workspace member, message-list and membership records are read-only under these roles. All WhatsApp object writes go through app services, and the internal tool-request ledger is not granted to callers. AI tools require trusted platform delegation v1, caller-scoped reads/files, persistent idempotency and confirmation for bulk/destructive actions. The HTTP API-key opt-in is not consulted. See spec 17 and `tools/twenty-caller-delegation/README.md`.

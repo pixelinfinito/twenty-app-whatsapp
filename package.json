@@ -16,7 +16,8 @@
   "engines": {
     "node": "^24.5.0",
     "npm": "please-use-yarn",
-    "yarn": ">=4.0.2"
+    "yarn": ">=4.0.2",
+    "twenty": ">=2.54.0"
   },
   "keywords": [
     "twenty-app"
@@ -31,6 +32,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run --config vitest.unit.config.ts",
+    "test:platform": "node --test tools/twenty-caller-delegation/delegation.test.mjs",
     "capture:reredact": "node --env-file=.dev.vars tools/webhook-capture/reredact.ts"
   },
   "frontComponentSharedDependencies": [
@@ -42,14 +44,20 @@
     "twenty-ui/theme-constants"
   ],
   "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/jsdom": "^30",
     "@types/node": "^24.7.2",
     "@types/react": "^19.0.0",
+    "@types/react-dom": "~19.2.3",
     "@typescript/native-preview": "^7.0.0-dev.20260116.1",
+    "jsdom": "^26.1.0",
     "oxlint": "^0.16.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "twenty-client-sdk": "2.31.0",
-    "twenty-sdk": "2.31.0",
+    "twenty": "2.54.0",
+    "twenty-client-sdk": "2.54.0",
+    "twenty-sdk": "2.54.0",
     "twenty-ui": "1.0.0-alpha.1",
     "typescript": "^5.9.3",
     "vite-tsconfig-paths": "^4.2.1",

@@ -75,7 +75,6 @@ placeholder page in the sidebar.
 | `LF_CONSENT_KEYWORD` | `c8e4a7b6-1d52-4f39-8a07-2b6e5d90c134` | queued |
 | `LF_TEMPLATE_SUBMIT` | `7b31c0da-6e48-4a2f-9d15-3ac8e2f47b90` | httpRoute `POST /s/whatsapp/template` |
 | `LF_CONSENT_BACKFILL` | `90904cd6-e3ff-4778-9678-54fc10bf30aa` | queued |
-| `LF_UPLOAD_ROUTE` | `1145a0b8-8a25-4210-9fb6-685a653f2864` | httpRoute `POST /s/whatsapp/upload` |
 | `LF_POST_INSTALL` | `dcea2279-13e2-491d-83b1-74387ff4e872` | postInstall |
 | `LF_UNINSTALL` | `4f0711c1-5bfe-49b5-995c-cdbc1680820f` | uninstall |
 
@@ -156,3 +155,24 @@ with `position: 1000` so it lands after the stock tabs, and
 4. Prefer `yarn twenty dev:add <entityType>`, which scaffolds the file with a fresh UUID; then
    replace the generated literal with the named constant so this registry stays the single source
    of truth.
+
+| `whatsappCampaign.headerMediaFile` | `f8fbe965-b9d1-48f6-ba60-d57626818508` | Durable campaign header FILES field (D-70) |
+
+## AI tools and request ledger (caller delegation v1)
+
+| Identifier | UUID v4 |
+|---|---|
+| `WHATSAPP_ACCOUNTS` | `387b282d-abe3-4627-bdad-58224369cbf3` |
+| `WHATSAPP_THREAD_ACTION` | `108210b3-aed0-4ee1-9569-099754f0f5d1` |
+| `WHATSAPP_GET_CAPABILITIES` | `36b9ab95-eb00-4cc7-bd49-42e3206a7db8` |
+| `WHATSAPP_LIST_THREADS` | `f18eb20b-761e-443c-bd4e-1e47013e25e1` |
+| `WHATSAPP_CAMPAIGNS` | `a56de99d-bf65-4431-8415-8881329435f1` |
+| `WHATSAPP_TEMPLATES` | `58a40b37-6b0a-415b-8282-c867b0dc4f46` |
+| `WHATSAPP_CONSENT` | `797813ae-7aae-407f-ad7e-a8c7a133acd8` |
+| `WHATSAPP_SEND_MESSAGE` | `d66be038-38b2-4f19-b912-96fb04ab61d0` |
+| `WHATSAPP_GET_THREAD` | `7fd23424-e7ee-4438-8bc5-76f5e1a5b630` |
+| `WHATSAPP_WEBHOOKS` | `e0ec4d4e-bf86-4150-a350-f812d6c8f766` |
+| `OBJ_TOOL_REQUEST` | `0ff05a48-e249-4d8f-83e7-28bae21da566` |
+| `PERMISSION_WHATSAPP_OPERATOR` | `f13914f7-4817-4bf8-8f4c-4e00d80554ac` |
+| `PERMISSION_WHATSAPP_ADMIN` | `8238a2d2-67a5-4dc5-ab7e-d7175fd03ab8` |
+| `SKILL_WHATSAPP` | `ee47e7fa-1410-46f6-8e9d-e7d7b23561b2` |

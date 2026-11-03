@@ -70,7 +70,7 @@ export const PanelHeader = ({
             border: 'none',
             borderRadius: theme.border.radius.sm,
             background: 'transparent',
-            color: theme.font.color.tertiary,
+            color: theme.font.color.secondary,
             cursor: 'pointer',
           }}
         >
@@ -78,7 +78,7 @@ export const PanelHeader = ({
         </button>
       </div>
       {hint === undefined ? null : (
-        <p style={{ margin: 0, fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}>
+        <p style={{ margin: 0, fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
           {hint}
         </p>
       )}
@@ -99,6 +99,7 @@ export type TextFieldProps = {
   /** Shown quietly on the right of the label — a character or row count. */
   counter?: string;
   inputMode?: 'text' | 'decimal' | 'tel' | 'url';
+  disabled?: boolean;
 };
 
 export const TextField = ({
@@ -113,6 +114,7 @@ export const TextField = ({
   placeholder,
   counter,
   inputMode = 'text',
+  disabled = false,
 }: TextFieldProps) => {
   const theme = useTheme();
   const message = fieldMessage(error, t);
@@ -148,13 +150,14 @@ export const TextField = ({
       >
         <span style={{ flex: '1 1 auto' }}>{label}</span>
         {counter === undefined ? null : (
-          <span style={{ color: theme.font.color.tertiary }}>{counter}</span>
+          <span style={{ color: theme.font.color.secondary }}>{counter}</span>
         )}
       </label>
 
       {rows === undefined ? (
         <input
           id={id}
+          disabled={disabled}
           type="text"
           inputMode={inputMode}
           value={value}
@@ -168,6 +171,7 @@ export const TextField = ({
       ) : (
         <textarea
           id={id}
+          disabled={disabled}
           rows={rows}
           value={value}
           maxLength={maxLength}
@@ -203,6 +207,7 @@ export const TextField = ({
 export const PanelFooter = ({
   submitLabel,
   submitIcon = 'send',
+  busy = false,
   onCancel,
   onSubmit,
   disabled,
@@ -210,6 +215,7 @@ export const PanelFooter = ({
 }: {
   submitLabel: string;
   submitIcon?: IconName;
+  busy?: boolean;
   onCancel: () => void;
   onSubmit: () => void;
   disabled: boolean;
@@ -241,6 +247,7 @@ export const PanelFooter = ({
       <button
         type="button"
         onClick={onCancel}
+        disabled={busy}
         style={{
           ...base,
           border: `1px solid ${theme.border.color.medium}`,
@@ -258,12 +265,12 @@ export const PanelFooter = ({
           ...base,
           border: '1px solid transparent',
           background: disabled ? theme.background.transparent.light : theme.color.blue,
-          color: disabled ? theme.font.color.tertiary : theme.font.color.inverted,
+          color: disabled ? theme.font.color.secondary : theme.font.color.inverted,
           cursor: disabled ? 'default' : 'pointer',
         }}
       >
         <Glyph name={submitIcon} size="md" />
-        {submitLabel}
+        {busy ? t('chat.sending') : submitLabel}
       </button>
     </div>
   );
@@ -309,10 +316,10 @@ export const IconButton = ({
         borderRadius: theme.border.radius.sm,
         background: 'transparent',
         color: disabled
-          ? theme.font.color.light
+          ? theme.font.color.secondary
           : tone === 'danger'
             ? theme.font.color.danger
-            : theme.font.color.tertiary,
+            : theme.font.color.secondary,
         cursor: disabled ? 'default' : 'pointer',
         padding: 0,
       }}

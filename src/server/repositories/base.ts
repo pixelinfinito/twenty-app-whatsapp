@@ -87,9 +87,9 @@ export const isUuid = (value: unknown): value is string =>
  * policy and the call counters cannot be forgotten at a call site.
  */
 export const query = async <T>(
-  build: (client: ReturnType<typeof coreClient>) => Promise<T>,
+  build: (client: ReturnType<typeof coreClient>) => T,
   label: string,
-): Promise<T> => withRetry(() => build(coreClient()), { label });
+): Promise<Awaited<T>> => withRetry(() => build(coreClient()), { label });
 
 export const mutate = query;
 

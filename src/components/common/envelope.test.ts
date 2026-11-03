@@ -93,3 +93,9 @@ describe('mergeEnvelope', () => {
     expect(mergeEnvelope(full, envelope()).policy).toBeUndefined();
   });
 });
+
+it('retains upload metadata across thread deltas', () => {
+  const uploadTargets = { messageMediaFieldMetadataId: 'message-field', campaignHeaderMediaFieldMetadataId: null };
+  const full = envelope({ uploadTargets });
+  expect(mergeEnvelope(full, envelope()).uploadTargets).toEqual(uploadTargets);
+});

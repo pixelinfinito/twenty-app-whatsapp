@@ -197,6 +197,10 @@ export const MessageList = ({
   return (
     <div
       className="wa-thread-transcript"
+      role="region"
+      aria-label={t('chat.conversation')}
+      aria-busy={isLoading}
+      tabIndex={0}
       onScroll={onScroll}
       style={{
         display: 'flex',
@@ -224,6 +228,9 @@ export const MessageList = ({
         a statement about the data, and a list that has not finished its first
         read is not entitled to make it.
       */}
+      {messages.length === 0 && isLoading ? (
+        <span role="status" style={{ margin: 'auto', color: theme.font.color.secondary }}>{t('common.loading')}</span>
+      ) : null}
       {messages.length === 0 && !isLoading ? (
         <div className="wa-thread-lane">
           <EmptyState icon="inbox" title={t('chat.empty')} body={t('chat.emptyBody')} />
@@ -265,7 +272,7 @@ export const MessageList = ({
                 style={{
                   alignSelf: 'center',
                   fontSize: theme.font.size.xs,
-                  color: theme.font.color.tertiary,
+                  color: theme.font.color.secondary,
                   background: theme.background.transparent.light,
                   borderRadius: theme.border.radius.pill,
                   padding: `0 ${theme.spacing[2]}`,

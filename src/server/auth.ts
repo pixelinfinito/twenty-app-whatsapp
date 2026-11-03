@@ -1,9 +1,10 @@
-import { kv } from 'twenty-sdk/logic-function';
+import { kv, type LogicFunctionExecutionContext } from 'twenty-sdk/logic-function';
 
 import { ROLE_ADMIN, ROLE_AGENT } from '../constants/universal-identifiers';
-import { callerMetadataClient, metadataClient } from './clients';
+import { metadataClient } from './clients';
 import { config } from './config';
 import { describeError, logger } from './logger';
+import { toolScope } from './tool-scope';
 
 /**
  * Server-side role re-checks (SEC-5).
@@ -114,100 +115,6 @@ export type AuthEvent = {
   headers?: Record<string, string | undefined>;
 };
 
-/**
- * The caller's own bearer token, if the route asked for it to be forwarded.
- *
- * Header names are case-insensitive and gateways disagree about which case they
- * use, so the lookup is too.
- */
-export const readBearerToken = (
-  headers: Record<string, string | undefined> | undefined,
-): string | null => {
-  if (headers === undefined || headers === null) return null;
-
-  const raw = Object.entries(headers).find(
-    ([name]) => name.toLowerCase() === 'authorization',
-  )?.[1];
-
-  if (typeof raw !== 'string') return null;
-
-  /**
-   * `Bearer` on its own is a scheme with no credential. Stripping a fixed
-   * seven characters would turn it into the literal token "Bearer" and send
-   * that to the platform as if it meant something.
-   */
-  const token = raw.trim().replace(/^bearer\s+/i, '').trim();
-
-  return token.length === 0 || token.toLowerCase() === 'bearer' ? null : token;
-};
-
-/**
- * Asks the platform, using the caller's *own* credential, which workspace
- * member they are (D-53).
- *
- * This is the join the app cannot make for itself. The route event carries a
- * `userWorkspaceId` and nothing else; `getRoles` lists members by
- * `workspaceMember.id` and returns `userWorkspaceId: null` for all of them, so
- * the two never meet. The caller's token does meet them: `currentUser` answers
- * for whoever holds it, in the workspace the token is scoped to.
- *
- * Two properties make this safe to trust:
- *
- * - **It is not a claim the caller makes.** The front component sends no
- *   identity; the token is a credential the platform issued and will verify.
- *   A caller who forges this is a caller who already has someone else's
- *   session.
- * - **It is bound to the event.** `currentUserWorkspace.id` must equal the
- *   `userWorkspaceId` the platform injected. A token from another workspace, or
- *   a token that answers for something other than this request's membership,
- *   resolves to nothing rather than to a member.
- *
- * Returns `null` — never a guess — when the token is absent, rejected, or does
- * not agree with the event. The caller then falls back to the role map, and if
- * that cannot place them either they are refused.
- *
- * Not cached. It is one query, it is the request's identity, and a cache keyed
- * by anything cheaper than the token is a way to answer as the wrong person.
- */
-export const resolveWorkspaceMemberId = async (
-  event: AuthEvent,
-  userWorkspaceId: string,
-): Promise<string | null> => {
-  const token = readBearerToken(event.headers);
-
-  if (token === null) return null;
-
-  try {
-    const result = await callerMetadataClient(token).query({
-      currentUser: {
-        currentUserWorkspace: { id: true },
-        workspaceMember: { id: true },
-      },
-    });
-
-    const boundTo = result.currentUser?.currentUserWorkspace?.id ?? null;
-    const memberId = result.currentUser?.workspaceMember?.id ?? null;
-
-    if (boundTo !== userWorkspaceId) {
-      logger.warn('auth.token_workspace_mismatch');
-
-      return null;
-    }
-
-    return typeof memberId === 'string' ? memberId : null;
-  } catch (error) {
-    /**
-     * Not fatal. An app token forwarded instead of a session token, or a
-     * platform that declines `currentUser` to this credential, both land here —
-     * and both are answered by falling back to the role map rather than by
-     * refusing a caller who may be perfectly entitled.
-     */
-    logger.info('auth.caller_identity_unavailable', describeError(error));
-
-    return null;
-  }
-};
-
 /** Every role this caller holds, matched by whichever key the platform gave us. */
 export const rolesForCaller = (
   roles: RoleAssignment[],
@@ -222,8 +129,14 @@ export const rolesForCaller = (
     ),
   );
 
-export const requireCaller = async (event: AuthEvent): Promise<Caller> => {
-  const userWorkspaceId = event.userWorkspaceId;
+export type CallerContext = Pick<LogicFunctionExecutionContext, 'userWorkspaceId' | 'workspaceMemberId'>;
+
+/** Identity comes from Twenty's trusted execution context, never a request header or body. */
+export const requireCaller = async (_event: AuthEvent, context?: CallerContext): Promise<Caller> => {
+  const invocation = toolScope();
+  if (invocation) return invocation.caller;
+  if (context === undefined) throw new UnauthorizedError('Missing execution context');
+  const userWorkspaceId = context.userWorkspaceId;
 
   /**
    * No membership on an `isAuthRequired: true` route means a **machine
@@ -282,13 +195,8 @@ export const requireCaller = async (event: AuthEvent): Promise<Caller> => {
     throw new ForbiddenError('Could not verify permissions');
   }
 
-  /**
-   * Identity first, then roles. The lookup is what makes the role map usable at
-   * all on a platform that does not fill in `userWorkspaceId` (D-53), and it
-   * doubles as the source of `workspaceMemberId` — which assignment, audit and
-   * the `mine` inbox filter all depend on being a real member id.
-   */
-  const workspaceMemberId = await resolveWorkspaceMemberId(event, userWorkspaceId);
+  // Twenty binds this member ID to the authenticated route invocation.
+  const workspaceMemberId = context?.workspaceMemberId ?? null;
 
   const mine = rolesForCaller(roles, { userWorkspaceId, workspaceMemberId });
 

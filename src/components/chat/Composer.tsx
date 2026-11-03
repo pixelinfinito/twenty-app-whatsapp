@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useTheme } from 'twenty-ui/theme-constants';
 
 import type { ContactCardProjection } from '../../domain/feed/content';
@@ -15,10 +15,10 @@ import {
   AttachmentPanel,
   ContactPanel,
   LocationPanel,
-  type AttachmentPanelProps,
   type RecentAttachment,
 } from './builders/SendPanels';
 import { VoicePanel } from './builders/VoicePanel';
+import { ComposerAction } from './ComposerAction';
 import { QuoteStrip } from './QuoteStrip';
 import { TemplatePicker } from './TemplatePicker';
 
@@ -77,25 +77,25 @@ export type ComposerProps = {
   person: PersonProjection | null;
   /** Files already in this conversation, for the attachment panel's reuse list. */
   recentFiles?: RecentAttachment[];
-  /** Workspace-attachment search, for the panel's "already in Twenty" picker. */
-  onFileSearch?: AttachmentPanelProps['onFileSearch'];
-  onSendText: (body: string) => void;
-  onSendTemplate: (templateId: string, parameters: ResolvedParameters) => void;
+  fieldMetadataId?: string | null;
+  onSendText: (body: string) => Promise<boolean>;
+  onSendTemplate: (templateId: string, parameters: ResolvedParameters) => Promise<boolean>;
   onSendMedia: (input: {
     mediaKind: 'image' | 'video' | 'audio' | 'document';
+    fileId?: string;
     fileUrl?: string;
     filePath?: string;
     filename: string | null;
     caption: string | null;
     voice?: boolean;
-  }) => void;
+  }) => Promise<boolean>;
   onSendLocation: (input: {
     latitude: number;
     longitude: number;
     name: string | null;
     address: string | null;
-  }) => void;
-  onSendContact: (contact: ContactCardProjection) => void;
+  }) => Promise<boolean>;
+  onSendContact: (contact: ContactCardProjection) => Promise<boolean>;
   /**
    * Resolves to whether the route accepted it. The builder stays open on a
    * refusal, because that is the only surface its field-addressed errors have.
@@ -170,7 +170,7 @@ const PanelFrame = ({
     border: 'none',
     borderRadius: theme.border.radius.sm,
     background: 'transparent',
-    color: theme.font.color.tertiary,
+    color: theme.font.color.secondary,
     cursor: 'pointer',
     padding: 0,
   };
@@ -267,35 +267,6 @@ const DRAFT_EMOJI = [
   '🙏', '🎉', '❤️', '🔥', '✅', '❌', '⚠️', '📍',
 ] as const;
 
-const actionStyle = (
-  theme: ReturnType<typeof useTheme>,
-  emphasis: 'loud' | 'quiet' | 'disabled',
-): React.CSSProperties => ({
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: theme.spacing[1],
-  minHeight: '32px',
-  border:
-    emphasis === 'quiet' ? `1px solid ${theme.border.color.medium}` : '1px solid transparent',
-  borderRadius: theme.border.radius.sm,
-  background:
-    emphasis === 'loud'
-      ? theme.color.blue
-      : emphasis === 'disabled'
-        ? theme.background.transparent.light
-        : 'transparent',
-  color:
-    emphasis === 'loud'
-      ? theme.font.color.inverted
-      : emphasis === 'disabled'
-        ? theme.font.color.tertiary
-        : theme.font.color.secondary,
-  cursor: emphasis === 'disabled' ? 'default' : 'pointer',
-  fontFamily: theme.font.family,
-  fontSize: theme.font.size.sm,
-  padding: `0 ${theme.spacing[2]}`,
-  whiteSpace: 'nowrap',
-});
 
 type SheetEntry = {
   key: string;
@@ -377,7 +348,7 @@ export const Composer = ({
   replyTarget,
   person,
   recentFiles = [],
-  onFileSearch,
+  fieldMetadataId,
   onSendText,
   onSendTemplate,
   onSendMedia,
@@ -388,7 +359,14 @@ export const Composer = ({
   onDismissRefusal,
 }: ComposerProps) => {
   const theme = useTheme();
+  const instanceId = useId();
+  const hintId = `wa-compose-hint-${instanceId}`;
+  const panelGeneration = useRef(0);
+  const panelTicket = panelGeneration.current;
   const [draft, setDraft] = useState('');
+  const draftValue = useRef('');
+  draftValue.current = draft;
+  const submitting = useRef(false);
   const [mode, setMode] = useState<ComposerMode>({ kind: 'text' });
   const [sheetOpen, setSheetOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -411,31 +389,38 @@ export const Composer = ({
   const templateAvailable =
     capabilities?.template.allowed ?? (canSend && (allowed || windowClosed));
 
-  const submit = () => {
+  const submit = async () => {
     const body = draft.trim();
-
-    if (body.length === 0 || !allowed || !canSend || isSending) return;
-
-    onSendText(body);
-    setDraft('');
+    if (!body || !allowed || !canSend || isSending || submitting.current) return;
+    submitting.current = true;
+    const sentDraft = draft;
+    try {
+      if (await onSendText(body)) {
+        // Keep anything typed while the request was in flight.
+        if (draftValue.current === sentDraft) setDraft('');
+      }
+    } finally {
+      submitting.current = false;
+    }
   };
 
   const open = (next: ComposerMode) => {
+    panelGeneration.current += 1;
     setMode(next);
     setSheetOpen(false);
     setPanelCollapsed(false);
   };
 
   const close = () => {
+    panelGeneration.current += 1;
     setMode({ kind: 'text' });
     setSheetOpen(false);
     setPanelCollapsed(false);
   };
 
-  /** Every panel returns to the text box and clears the reply it consumed. */
+  /** The thread settles the consumed reply; the panel returns to the text box. */
   const afterSend = () => {
     close();
-    onCancelReply();
   };
 
   const disabledReason = !canSend
@@ -482,13 +467,15 @@ export const Composer = ({
       case 'template':
         return (
           <TemplatePicker
+            fieldMetadataId={fieldMetadataId}
             templates={templates}
             t={t}
             isSending={isSending}
             onCancel={close}
-            onSend={(templateId, parameters) => {
-              onSendTemplate(templateId, parameters);
-              afterSend();
+            onSend={async (templateId, parameters) => {
+              const accepted = await onSendTemplate(templateId, parameters);
+              if (accepted && panelGeneration.current === panelTicket) afterSend();
+              return accepted;
             }}
           />
         );
@@ -500,17 +487,19 @@ export const Composer = ({
             isSending={isSending}
             initialKind={mode.initial}
             recentFiles={recentFiles}
-            onFileSearch={onFileSearch}
+            fieldMetadataId={fieldMetadataId}
             onCancel={close}
-            onSend={(input) => {
-              onSendMedia({
+            onSend={async (input) => {
+              const accepted = await onSendMedia({
                 mediaKind: input.mediaKind,
+                fileId: input.fileId,
                 ...(input.fileUrl === undefined ? {} : { fileUrl: input.fileUrl }),
                 ...(input.filePath === undefined ? {} : { filePath: input.filePath }),
                 filename: input.filename,
                 caption: input.caption,
               });
-              afterSend();
+              if (accepted && panelGeneration.current === panelTicket) afterSend();
+              return accepted;
             }}
           />
         );
@@ -518,18 +507,21 @@ export const Composer = ({
       case 'voice':
         return (
           <VoicePanel
+            fieldMetadataId={fieldMetadataId}
             t={t}
             isSending={isSending}
-            onSend={(input) => {
-              onSendMedia({
+            onSend={async (input) => {
+              const accepted = await onSendMedia({
                 mediaKind: 'audio',
+                fileId: input.fileId,
                 ...(input.fileUrl.length === 0 ? {} : { fileUrl: input.fileUrl }),
                 ...(input.filePath.length === 0 ? {} : { filePath: input.filePath }),
                 filename: input.filename,
                 caption: null,
                 voice: true,
               });
-              afterSend();
+              if (accepted && panelGeneration.current === panelTicket) afterSend();
+              return accepted;
             }}
           />
         );
@@ -540,9 +532,10 @@ export const Composer = ({
             t={t}
             isSending={isSending}
             onCancel={close}
-            onSend={(location) => {
-              onSendLocation(location);
-              afterSend();
+            onSend={async (location) => {
+              const accepted = await onSendLocation(location);
+              if (accepted && panelGeneration.current === panelTicket) afterSend();
+              return accepted;
             }}
           />
         );
@@ -554,9 +547,10 @@ export const Composer = ({
             isSending={isSending}
             person={person}
             onCancel={close}
-            onSend={(contact) => {
-              onSendContact(contact);
-              afterSend();
+            onSend={async (contact) => {
+              const accepted = await onSendContact(contact);
+              if (accepted && panelGeneration.current === panelTicket) afterSend();
+              return accepted;
             }}
           />
         );
@@ -572,7 +566,7 @@ export const Composer = ({
             onCancel={close}
             onSend={(interactive) => {
               void onSendInteractive(interactive).then((accepted) => {
-                if (accepted) afterSend();
+                if (accepted && panelGeneration.current === panelTicket) afterSend();
               });
             }}
           />
@@ -586,6 +580,15 @@ export const Composer = ({
   return (
     <div
       className="wa-composer"
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return;
+        if (sheetOpen || emojiOpen) {
+          event.preventDefault();
+          event.stopPropagation();
+          setSheetOpen(false);
+          setEmojiOpen(false);
+        }
+      }}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -708,7 +711,7 @@ export const Composer = ({
                 alignItems: 'center',
                 gap: theme.spacing[1],
                 fontSize: theme.font.size.xs,
-                color: theme.font.color.tertiary,
+                color: theme.font.color.secondary,
               }}
             >
               <Glyph name={windowClosed ? 'windowClosed' : 'warning'} />
@@ -719,7 +722,7 @@ export const Composer = ({
           {sheetOpen ? (
             <div
               className="wa-composer-sheet"
-              role="menu"
+              role="group"
               aria-label={t('chat.attachTitle')}
               style={{
                 position: 'absolute',
@@ -744,7 +747,6 @@ export const Composer = ({
                   <button
                     key={entry.key}
                     type="button"
-                    role="menuitem"
                     disabled={!available}
                     title={available ? undefined : t('chat.unavailableHere')}
                     onClick={() => open(entry.mode)}
@@ -758,7 +760,7 @@ export const Composer = ({
                       background: 'transparent',
                       color: available
                         ? theme.font.color.secondary
-                        : theme.font.color.light,
+                        : theme.font.color.secondary,
                       cursor: available ? 'pointer' : 'default',
                       fontFamily: theme.font.family,
                       fontSize: theme.font.size.sm,
@@ -820,128 +822,76 @@ export const Composer = ({
             </div>
           ) : null}
 
-          <div style={{ display: 'flex', gap: theme.spacing[1], alignItems: 'flex-end' }}>
-            <button
-              type="button"
-              onClick={() => {
-                setSheetOpen((current) => !current);
-                setEmojiOpen(false);
-              }}
-              aria-expanded={sheetOpen}
-              aria-label={t('chat.attach')}
-              title={t('chat.attach')}
-              disabled={!canSend}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flex: '0 0 auto',
-                minWidth: '32px',
-                minHeight: '32px',
-                border: `1px solid ${theme.border.color.medium}`,
-                borderRadius: theme.border.radius.sm,
-                background: 'transparent',
-                color: canSend ? theme.font.color.secondary : theme.font.color.light,
-                cursor: canSend ? 'pointer' : 'default',
-                padding: 0,
-              }}
-            >
-              <Glyph name="newCampaign" size="md" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setEmojiOpen((current) => !current);
-                setSheetOpen(false);
-              }}
-              aria-expanded={emojiOpen}
-              aria-label={t('chat.emoji')}
-              title={t('chat.emoji')}
-              disabled={!allowed || !canSend}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flex: '0 0 auto',
-                minWidth: '32px',
-                minHeight: '32px',
-                border: `1px solid ${theme.border.color.medium}`,
-                borderRadius: theme.border.radius.sm,
-                background: 'transparent',
-                color:
-                  allowed && canSend ? theme.font.color.secondary : theme.font.color.light,
-                cursor: allowed && canSend ? 'pointer' : 'default',
-                padding: 0,
-              }}
-            >
-              <Glyph name="react" size="md" />
-            </button>
-
+          <div className="wa-composer-controls" data-disabled={!allowed || !canSend}>
             <textarea
               value={draft}
               disabled={!allowed || !canSend}
+              className="wa-composer-input"
               maxLength={MAX_TEXT_LENGTH}
-              rows={2}
+              aria-describedby={hintId}
+              rows={3}
               placeholder={t('chat.placeholder')}
               aria-label={t('chat.placeholder')}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
                   event.preventDefault();
-                  submit();
+                  void submit();
                 }
               }}
-              style={{
-                flex: '1 1 auto',
-                minWidth: 0,
-                resize: 'none',
-                border: `1px solid ${theme.border.color.medium}`,
-                borderRadius: theme.border.radius.sm,
-                background: allowed
-                  ? theme.background.secondary
-                  : theme.background.transparent.light,
-                color: theme.font.color.primary,
-                fontFamily: theme.font.family,
-                fontSize: theme.font.size.sm,
-                padding: theme.spacing[1],
-              }}
             />
-
-            {/*
-              Template first, Send second, always in that order and always in
-              this row. `emphasis` is the only thing the policy moves — the
-              control never changes size, shape or position, which is what it
-              used to do at the exact moment a rep needed to find it.
-            */}
-            {templateAvailable ? (
-              <button
-                type="button"
-                onClick={() => open({ kind: 'template' })}
-                aria-label={t('chat.chooseTemplate')}
-                style={actionStyle(theme, allowed ? 'quiet' : 'loud')}
-              >
-                <Glyph name="template" size="md" />
-                {t('chat.chooseTemplate')}
-              </button>
-            ) : null}
-
-            {allowed && canSend ? (
-              <button
-                type="button"
-                onClick={submit}
-                disabled={draft.trim().length === 0 || isSending}
-                aria-label={t('chat.send')}
-                style={actionStyle(
-                  theme,
-                  draft.trim().length === 0 || isSending ? 'disabled' : 'loud',
-                )}
-              >
-                <Glyph name="send" size="md" />
-                {isSending ? t('chat.sending') : t('chat.send')}
-              </button>
-            ) : null}
+            <div className="wa-composer-toolbar">
+              <div className="wa-composer-tools">
+                <ComposerAction
+                  icon="newCampaign"
+                  label={t('chat.attach')}
+                  expanded={sheetOpen}
+                  disabled={!canSend || isSending}
+                  onClick={() => {
+                    setSheetOpen((current) => !current);
+                    setEmojiOpen(false);
+                  }}
+                />
+                <ComposerAction
+                  icon="react"
+                  label={t('chat.emoji')}
+                  expanded={emojiOpen}
+                  disabled={!allowed || !canSend}
+                  onClick={() => {
+                    setEmojiOpen((current) => !current);
+                    setSheetOpen(false);
+                  }}
+                />
+                {templateAvailable ? (
+                  <ComposerAction
+                    icon="template"
+                    label={t('chat.chooseTemplate')}
+                    primary={!allowed}
+                    disabled={!canSend || isSending}
+                    onClick={() => open({ kind: 'template' })}
+                  />
+                ) : null}
+              </div>
+              <span id={hintId} className="wa-composer-hint">{t('chat.composeHint')}</span>
+              <div className="wa-composer-actions">
+                {draft.length >= MAX_TEXT_LENGTH - 256 ? (
+                  <span className="wa-composer-count" aria-live="polite">{draft.length}/{MAX_TEXT_LENGTH}</span>
+                ) : null}
+                {allowed && canSend ? (
+                  <ComposerAction
+                    icon="send"
+                    label={t(isSending ? 'chat.sending' : 'chat.send')}
+                    primary
+                    busy={isSending}
+                    disabled={draft.trim().length === 0 || isSending}
+                    align="end"
+                    onClick={() => void submit()}
+                  />
+                ) : null}
+              </div>
+            </div>
           </div>
+          <span role="status" className="wa-sr-only">{isSending ? t('chat.sending') : ''}</span>
         </div>
       )}
     </div>

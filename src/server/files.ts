@@ -1,13 +1,12 @@
 import { describeError, logger } from './logger';
 import { BodyTooLargeError, readBodyCapped } from './read-body';
+import { toolScope } from './tool-scope';
 
 /**
  * Reading a file back out of Twenty's own storage (specs/04 §5 step 6, D-18).
  *
- * The composer cannot read file bytes — the front-component sandbox has no
- * `FileReader` — so an outbound attachment is uploaded to Twenty storage first
- * and the send carries only a handle. Somewhere between that handle and Meta's
- * media endpoint, something has to fetch the bytes.
+ * Native uploads first enter Twenty storage through the host API. The sender
+ * reads retained files using freshly signed URLs before uploading to Meta.
  *
  * **This is the one module outside the provider allowed to make an HTTP
  * request, and the allowance is narrow by construction.** `resolveFileUrl`
@@ -81,7 +80,7 @@ const FILE_STORE_PREFIX = '/files/';
  */
 export const resolveFileUrl = (handle: WorkspaceFileHandle): string => {
   const base = apiBaseUrl();
-  const raw = (handle.url ?? handle.path ?? '').trim();
+  const raw = (handle.path?.trim() || handle.url || '').trim();
 
   if (raw.length === 0) throw new WorkspaceFileError('No file url or path was given');
 
@@ -94,7 +93,7 @@ export const resolveFileUrl = (handle: WorkspaceFileHandle): string => {
   const relative = raw.replace(/^\/+/, '');
   const candidate = /^https?:\/\//i.test(raw)
     ? raw
-    : `${base}/${relative.startsWith('files/') ? relative : `files/${relative}`}`;
+    : `${base}/${relative.startsWith('files/') || relative.startsWith('file/files-field/') ? relative : `files/${relative}`}`;
 
   let supplied: URL;
   let expected: URL;
@@ -127,7 +126,9 @@ export const resolveFileUrl = (handle: WorkspaceFileHandle): string => {
    */
   const mount = `${expected.pathname.replace(/\/+$/, '')}${FILE_STORE_PREFIX}`;
 
-  if (!supplied.pathname.startsWith(mount) || decodedPath.includes('..')) {
+  const idMount = `${expected.pathname.replace(/\/+$/, '')}/file/files-field/`;
+  const isFileById = supplied.pathname.startsWith(idMount) && /^[0-9a-f-]{36}$/i.test(supplied.pathname.slice(idMount.length));
+  if ((!supplied.pathname.startsWith(mount) && !isFileById) || decodedPath.includes('..')) {
     throw new WorkspaceFileError(
       `Refusing to read ${supplied.pathname}: only ${mount} paths are workspace files`,
     );
@@ -178,8 +179,22 @@ export const downloadWorkspaceFile = async (
   { fetchImpl = globalThis.fetch }: { fetchImpl?: FetchLike } = {},
 ): Promise<DownloadedFile> => {
   const first = resolveFileUrl(handle);
+  const invocation = toolScope();
+  const signedToken = new URL(first).searchParams.get('token');
+  if (invocation && signedToken) {
+    // File URLs are bearer capabilities: the native file guard uses the URL's
+    // workspace, not the Authorization header. Do not accept another workspace's
+    // capability. The storage endpoint still verifies the signature and expiry.
+    try {
+      const payload = JSON.parse(Buffer.from(signedToken.split('.')[1] ?? '', 'base64url').toString('utf8')) as { workspaceId?: unknown };
+      if (payload.workspaceId !== invocation.principal.workspaceId) throw new WorkspaceFileError('The file belongs to another workspace');
+    } catch (error) {
+      if (error instanceof WorkspaceFileError) throw error;
+      throw new WorkspaceFileError('Invalid workspace file token');
+    }
+  }
   const origin = new URL(first).origin;
-  const token = process.env.TWENTY_APP_ACCESS_TOKEN;
+  const token = toolScope()?.accessToken ?? process.env.TWENTY_APP_APPLICATION_ACCESS_TOKEN ?? process.env.TWENTY_APP_ACCESS_TOKEN;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FILE_TIMEOUT_MS);

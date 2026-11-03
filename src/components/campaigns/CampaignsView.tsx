@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SurfaceStyles } from '../common/SurfaceStyles';
+import { useMemo, useState } from 'react';
 import { useTheme } from 'twenty-ui/theme-constants';
 
 import { useCopy, type Translate } from '../common/copy';
@@ -29,19 +30,17 @@ import {
  * is exactly the budget D-6 exists to protect.
  */
 
-/**
- * Below this the nine-column table cannot hold real names and counts without
- * colliding, so the list switches to stacked cards. Measured the same way the
- * inbox used to: `clientWidth` re-read every render, because `ResizeObserver`
- * is undefined here and `getBoundingClientRect` returns 0×0 (P-6).
- *
- * The inbox has since moved to a container query, which is the better answer
- * and would suit this too. It is not converted here because the table/card
- * switch changes *what is rendered* — nine columns or three lines, not one
- * layout reflowed — and rendering both so CSS can hide one would double the
- * rows in the accessibility tree for every campaign in the workspace.
- */
-export const TABLE_MIN_WIDTH = 640;
+/** A nine-column table needs room for names as well as delivery counters. */
+export const TABLE_MIN_WIDTH = 960;
+const campaignLayoutCss = `
+.wa-campaigns { container-type: inline-size; container-name: wa-campaigns; }
+.wa-campaign-table { display: none; }
+.wa-campaign-cards { display: flex; flex-direction: column; gap: 8px; }
+@container wa-campaigns (min-width: ${TABLE_MIN_WIDTH}px) {
+  .wa-campaign-table { display: block; }
+  .wa-campaign-cards { display: none; }
+}
+`;
 
 export const CampaignsView = () => {
   const theme = useTheme();
@@ -57,57 +56,8 @@ export const CampaignsView = () => {
    * builder is about to make.
    */
   const [editing, setEditing] = useState<Record<string, any> | null>(null);
-  const [wide, setWide] = useState(true);
   const [filter, setFilter] = useState<CampaignFilter>('all');
   const [search, setSearch] = useState('');
-
-  const measured = useRef<boolean | null>(null);
-  const node = useRef<HTMLDivElement | null>(null);
-
-  const measure = useCallback(() => {
-    const element = node.current;
-
-    if (element === null) return;
-
-    try {
-      const width =
-        element.clientWidth > 0
-          ? element.clientWidth
-          : typeof window === 'undefined'
-            ? 0
-            : (window.innerWidth ?? 0);
-
-      const isWide = width >= TABLE_MIN_WIDTH;
-
-      if (measured.current !== isWide) {
-        measured.current = isWide;
-        setWide(isWide);
-      }
-    } catch {
-      // Failing towards the card layout is the safe direction: cards in a
-      // wide pane are merely roomy, the table in a narrow one is unreadable.
-      measured.current = false;
-      setWide(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    measure();
-  });
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
-      return;
-    }
-
-    try {
-      window.addEventListener('resize', measure);
-
-      return () => window.removeEventListener('resize', measure);
-    } catch {
-      return;
-    }
-  }, [measure]);
 
   const archiveOpen = isArchiveFilter(filter);
 
@@ -136,6 +86,7 @@ export const CampaignsView = () => {
 
   const bootstrap = useFeed({ scope: 'bootstrap', intervalMs: 300_000 });
 
+  const builderReady = bootstrap.data !== null;
   const campaigns = (list.data?.campaigns ?? []) as Record<string, any>[];
   const canManage = list.data?.permissions.canManageCampaigns === true;
   const now = new Date(list.data?.serverTime ?? Date.now());
@@ -169,6 +120,7 @@ export const CampaignsView = () => {
   if (screen === 'builder') {
     return (
       <div
+        className="wa-surface"
         {...list.rootProps}
         style={{
           padding: theme.spacing[3],
@@ -179,7 +131,9 @@ export const CampaignsView = () => {
           fontFamily: theme.font.family,
         }}
       >
+        <SurfaceStyles />
         <CampaignBuilder
+          fieldMetadataId={bootstrap.data?.uploadTargets?.campaignHeaderMediaFieldMetadataId}
           accounts={bootstrap.data?.accounts ?? []}
           templates={bootstrap.data?.templates ?? []}
           resume={editing}
@@ -203,6 +157,7 @@ export const CampaignsView = () => {
 
     return (
       <div
+        className="wa-surface"
         {...detail.rootProps}
         style={{
           padding: theme.spacing[3],
@@ -213,13 +168,25 @@ export const CampaignsView = () => {
           fontFamily: theme.font.family,
         }}
       >
+        <SurfaceStyles />
+        {detail.isStale ? <Banner tone="danger">{t('chat.offline')}</Banner> : null}
         {campaign === null ? (
-          <Banner>{t('common.loading')}</Banner>
+          <EmptyState
+            icon={detail.isUnavailable ? 'warning' : 'pending'}
+            title={t(detail.isUnavailable ? 'common.unavailable' : 'common.loading')}
+            body={detail.error ?? undefined}
+            actions={<>
+              <ActionButton label={t('common.back')} icon="back" onClick={() => setSelectedId(null)} />
+              {detail.isUnavailable ? <ActionButton label={t('common.retry')} icon="retry" onClick={detail.refresh} /> : null}
+            </>}
+          />
         ) : (
           <CampaignDetail
+            key={campaign.id}
             campaign={campaign}
             recipients={(detail.data?.recipients ?? []) as Record<string, any>[]}
             canManage={canManage}
+            canEdit={builderReady}
             t={t}
             lang={lang}
             now={new Date(detail.data?.serverTime ?? Date.now())}
@@ -257,7 +224,7 @@ export const CampaignsView = () => {
 
   return (
     <div
-      ref={node}
+      className="wa-surface wa-campaigns"
       {...list.rootProps}
       style={{
         padding: theme.spacing[3],
@@ -271,6 +238,8 @@ export const CampaignsView = () => {
         gap: theme.spacing[2],
       }}
     >
+      <SurfaceStyles />
+      <style>{campaignLayoutCss}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: theme.spacing[2] }}>
         <span
           style={{ fontWeight: theme.font.weight.semiBold, fontSize: theme.font.size.lg }}
@@ -290,7 +259,7 @@ export const CampaignsView = () => {
               alignItems: 'center',
               gap: theme.spacing[1],
               fontSize: theme.font.size.sm,
-              color: theme.font.color.tertiary,
+              color: theme.font.color.secondary,
             }}
           >
             <Glyph name="archive" />
@@ -305,6 +274,7 @@ export const CampaignsView = () => {
         {canManage && !archiveOpen ? (
           <ActionButton
             label={t('campaign.new')}
+            disabled={!builderReady}
             tone="primary"
             icon="newCampaign"
             onClick={() => {
@@ -316,11 +286,18 @@ export const CampaignsView = () => {
       </div>
 
       {list.isStale ? <Banner tone="danger">{t('chat.offline')}</Banner> : null}
+      {canManage && bootstrap.isUnavailable ? (
+        <Banner tone="danger">
+          {t('common.unavailable')} {bootstrap.error}
+          <ActionButton label={t('common.retry')} icon="retry" onClick={bootstrap.refresh} />
+        </Banner>
+      ) : null}
 
       {/* Nothing loaded at all is a different thing from no campaigns yet. */}
       {list.isUnavailable ? (
         <Banner tone="danger">
           {t('common.unavailable')} {list.error}
+          <ActionButton label={t('common.retry')} icon="retry" onClick={list.refresh} />
         </Banner>
       ) : null}
 
@@ -370,7 +347,7 @@ export const CampaignsView = () => {
                 flex: '1 1 auto',
                 minWidth: 0,
                 border: 'none',
-                outline: 'none',
+
                 background: 'transparent',
                 color: theme.font.color.primary,
                 fontFamily: theme.font.family,
@@ -422,7 +399,7 @@ export const CampaignsView = () => {
               style={{
                 padding: theme.spacing[4],
                 textAlign: 'center',
-                color: theme.font.color.tertiary,
+                color: theme.font.color.secondary,
                 fontSize: theme.font.size.md,
               }}
             >
@@ -463,6 +440,7 @@ export const CampaignsView = () => {
                   {canManage ? (
                     <ActionButton
                       label={t('campaign.new')}
+                      disabled={!builderReady}
                       tone="primary"
                       icon="newCampaign"
                       onClick={() => {
@@ -498,7 +476,9 @@ export const CampaignsView = () => {
             }
           />
         </Card>
-      ) : wide ? (
+      ) : (
+        <>
+        <div className="wa-campaign-table">
         <Card>
           <div style={{ overflowX: 'auto' }}>
             <table
@@ -515,7 +495,7 @@ export const CampaignsView = () => {
               }}
             >
               <thead>
-                <tr style={{ textAlign: 'left', color: theme.font.color.tertiary }}>
+                <tr style={{ textAlign: 'left', color: theme.font.color.secondary }}>
                   {[
                     'campaign.col.name',
                     'campaign.col.status',
@@ -559,13 +539,13 @@ export const CampaignsView = () => {
             </table>
           </div>
         </Card>
-      ) : (
-        /**
+        </div>
+        <div className="wa-campaign-cards">
+        {/*
          * The narrow shape: one card per campaign, the whole card a button
-         * into detail. Name, status, and the counters that matter; the rest
-         * lives in the detail screen it opens.
-         */
-        visible.map((campaign) => (
+         * into detail. Only the visible layout participates in the accessibility tree.
+         */}
+        {visible.map((campaign) => (
           <button
             key={String(campaign.id)}
             type="button"
@@ -641,7 +621,9 @@ export const CampaignsView = () => {
 
             <Freshness campaign={campaign} now={now} lang={lang} t={t} />
           </button>
-        ))
+        ))}
+        </div>
+        </>
       )}
     </div>
   );
@@ -683,7 +665,7 @@ const AudienceLine = ({
     <span
       style={{
         fontSize: theme.font.size.xs,
-        color: theme.font.color.tertiary,
+        color: theme.font.color.secondary,
         fontWeight: theme.font.weight.regular,
       }}
     >
@@ -789,7 +771,7 @@ const CampaignRow = ({
       <td style={cell}>
         {money(Number(campaign.actualCostUsd ?? campaign.estimatedCostUsd ?? 0))}
       </td>
-      <td style={{ ...cell, color: theme.font.color.tertiary }}>
+      <td style={{ ...cell, color: theme.font.color.secondary }}>
         {relativeTime(
           (archived ? campaign.archivedAt : campaign.createdAt) as string | null,
           now,
@@ -839,7 +821,7 @@ const Freshness = ({
         alignItems: 'center',
         gap: theme.spacing[1],
         fontSize: theme.font.size.xs,
-        color: theme.font.color.tertiary,
+        color: theme.font.color.secondary,
         fontWeight: theme.font.weight.regular,
       }}
     >

@@ -248,7 +248,7 @@ export const MessageShell = ({
                 alignSelf: 'flex-start',
                 gap: theme.spacing[1],
                 fontSize: theme.font.size.xs,
-                color: theme.font.color.tertiary,
+                color: theme.font.color.secondary,
               }}
             >
               <Glyph name="campaign_replies" />
@@ -264,7 +264,7 @@ export const MessageShell = ({
                 alignSelf: 'flex-start',
                 gap: theme.spacing[1],
                 fontSize: theme.font.size.xs,
-                color: theme.font.color.tertiary,
+                color: theme.font.color.secondary,
               }}
             >
               <Glyph name="campaign_replies" />
@@ -382,7 +382,7 @@ export const MessageShell = ({
             alignItems: 'center',
             gap: theme.spacing[1],
             fontSize: theme.font.size.xs,
-            color: theme.font.color.tertiary,
+            color: theme.font.color.secondary,
             padding: `0 ${theme.spacing[1]}`,
           }}
         >
@@ -426,7 +426,7 @@ export const MessageShell = ({
                     ? theme.color.blue
                     : failed
                       ? theme.font.color.danger
-                      : theme.font.color.tertiary
+                      : theme.font.color.secondary
                 }
               />
             </span>
@@ -447,7 +447,7 @@ const DetailRow = ({ label, value }: { label: string; value: string }) => {
 
   return (
     <>
-      <dt style={{ color: theme.font.color.tertiary }}>{label}</dt>
+      <dt style={{ color: theme.font.color.secondary }}>{label}</dt>
       <dd style={{ margin: 0, color: theme.font.color.secondary, wordBreak: 'break-word' }}>
         {value}
       </dd>

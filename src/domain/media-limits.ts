@@ -93,6 +93,14 @@ export const validateOutboundMedia = ({
     };
   }
 
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return {
+      ok: false,
+      reason: MEDIA_REJECTION.WRONG_TYPE,
+      detail: 'The attachment is empty or has an invalid size',
+    };
+  }
+
   const mime = normaliseMimeType(mimeType);
 
   if (limit.mimeTypes.length > 0 && !limit.mimeTypes.includes(mime)) {
@@ -124,7 +132,7 @@ export const validateOutboundMedia = ({
  */
 export const mediaKindForHeaderFormat = (
   format: string | null | undefined,
-): OutboundMediaKind | null => {
+): 'image' | 'video' | 'document' | null => {
   switch ((format ?? '').toUpperCase()) {
     case 'IMAGE':
       return 'image';
@@ -135,41 +143,4 @@ export const mediaKindForHeaderFormat = (
     default:
       return null;
   }
-};
-
-/**
- * Which WhatsApp kind a stored file should travel as, judged by its filename.
- *
- * The attachment picker offers workspace files, and an Attachment row carries
- * no mime type — only a name and a storage path. Deliberately conservative,
- * for the same reason the retired device picker was: WhatsApp accepts only
- * jpeg/png as `image` and mp4/3gpp as `video`, so a webp photo or a .mov clip
- * is suggested as a *document* — which arrives, with a filename, rather than
- * being refused by Meta's validator after the rep pressed send. `.mp4` goes to
- * video and `.m4a` to audio: the extension is the only signal there is, and
- * that split is how the two are named in practice.
- */
-const EXTENSION_KINDS: Record<string, Exclude<OutboundMediaKind, 'sticker'>> = {
-  jpg: 'image',
-  jpeg: 'image',
-  png: 'image',
-  mp4: 'video',
-  '3gp': 'video',
-  '3gpp': 'video',
-  aac: 'audio',
-  amr: 'audio',
-  mp3: 'audio',
-  m4a: 'audio',
-  ogg: 'audio',
-  opus: 'audio',
-};
-
-export const mediaKindForFilename = (
-  filename: string | null | undefined,
-): Exclude<OutboundMediaKind, 'sticker'> => {
-  const name = (filename ?? '').trim().toLowerCase();
-  const dot = name.lastIndexOf('.');
-  const extension = dot === -1 ? '' : name.slice(dot + 1);
-
-  return EXTENSION_KINDS[extension] ?? 'document';
 };

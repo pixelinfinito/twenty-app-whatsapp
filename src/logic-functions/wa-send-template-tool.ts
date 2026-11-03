@@ -1,3 +1,8 @@
+import { findPersonById } from '../server/repositories/people';
+import { findTemplateById } from '../server/repositories/templates';
+import { authenticatedTool, toolTrigger, type WhatsappToolContext } from '../server/tool-runtime';
+import { once } from '../server/tool-store';
+import { toolScope } from '../server/tool-scope';
 import type { InputJsonSchema } from 'twenty-sdk/logic-function';
 import { defineLogicFunction } from 'twenty-sdk/define';
 
@@ -107,9 +112,9 @@ export const runSendTemplateTool = async (input: SendTemplateToolInput) => {
     },
     {
       sourceKind: SOURCE_KIND.AI_AGENT,
-      sentById: null,
+      sentById: toolScope()?.caller.workspaceMemberId ?? null,
       requestId: requestId.toLowerCase(),
-      channel: 'TWENTY_MCP',
+      channel: toolScope()?.principal.surface === 'AI_TOOL' ? 'TWENTY_AI' : 'TWENTY_MCP',
       accountResolution: 'exact',
       templateResolution: 'exact',
     },
@@ -120,7 +125,7 @@ export const runSendTemplateTool = async (input: SendTemplateToolInput) => {
   return { ...result, delivery: 'queued' as const };
 };
 
-export const handler = async (input: SendTemplateToolInput) => {
+const executeHandler = async (input: SendTemplateToolInput) => {
   try {
     const result = await runSendTemplateTool(input ?? {});
 
@@ -158,12 +163,28 @@ export const handler = async (input: SendTemplateToolInput) => {
   }
 };
 
+export const handler = (input: SendTemplateToolInput, context?: WhatsappToolContext) =>
+  authenticatedTool(sendTemplateInputSchema, input, context, async () => {
+    const normalized = { ...input,
+      personId: typeof input.personId === 'string' ? input.personId.trim() : input.personId,
+      templateId: typeof input.templateId === 'string' ? input.templateId.trim() : input.templateId,
+      accountId: typeof input.accountId === 'string' ? input.accountId.trim() : input.accountId,
+      requestId: typeof input.requestId === 'string' ? input.requestId.trim().toLowerCase() : input.requestId,
+    };
+    if (isUuid(normalized.personId) && !(await findPersonById(normalized.personId))) return denied(ACTION_REFUSAL.PERSON_UNKNOWN);
+    if (isUuid(normalized.templateId) && !(await findTemplateById(normalized.templateId))) return denied(ACTION_REFUSAL.TEMPLATE_UNKNOWN);
+    const result = await once(normalized.requestId, 'whatsapp-send-template', normalized, () => executeHandler(normalized));
+    return result;
+  }).then((result) => result.status === 'denied' && 'code' in result
+    ? { ...result, denialReason: result.code, messageId: null, threadId: null, replayed: false }
+    : result);
+
 export default defineLogicFunction({
   universalIdentifier: LF_SEND_TEMPLATE_TOOL,
   name: 'whatsapp-send-template',
   description:
     'Queues one published and Meta-approved WhatsApp template to one exact Twenty CRM Person. This changes external state and may contact a customer. Resolve the Person and call whatsapp-list-sendable-templates first. Never retry with a new requestId when the result is uncertain.',
   timeoutSeconds: 30,
-  toolTriggerSettings: { inputSchema: sendTemplateInputSchema },
+  toolTriggerSettings: toolTrigger(sendTemplateInputSchema),
   handler,
 });

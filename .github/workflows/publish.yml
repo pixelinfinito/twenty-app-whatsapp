@@ -49,4 +49,4 @@ jobs:
         # OIDC provenance for private repos
         # env:
         #   TWENTY_APP_PUBLISH_DISABLE_PROVENANCE: 'true'
-        run: yarn twenty app:publish
+        run: yarn twenty app publish

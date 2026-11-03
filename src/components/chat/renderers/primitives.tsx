@@ -110,7 +110,7 @@ export const ContentCard = ({
             </span>
           )}
           {meta === null || meta === undefined ? null : (
-            <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}>
+            <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
               {meta}
             </span>
           )}
@@ -162,7 +162,7 @@ export const CardAction = ({
     borderRadius: theme.border.radius.sm,
     background: tone === 'loud' ? theme.color.blue : 'transparent',
     color: disabled
-      ? theme.font.color.light
+      ? theme.font.color.secondary
       : tone === 'loud'
         ? theme.font.color.inverted
         : theme.font.color.secondary,
@@ -206,7 +206,7 @@ export const ContentTag = ({ icon, label }: { icon: IconName; label: string }) =
         gap: theme.spacing[1],
         alignSelf: 'flex-start',
         fontSize: theme.font.size.xs,
-        color: theme.font.color.tertiary,
+        color: theme.font.color.secondary,
         background: theme.background.transparent.light,
         borderRadius: theme.border.radius.sm,
         padding: `${theme.spacing[0.5]} ${theme.spacing[1]}`,

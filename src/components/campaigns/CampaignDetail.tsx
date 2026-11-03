@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { openCommandConfirmationModal } from 'twenty-sdk/front-component';
 import { useTheme } from 'twenty-ui/theme-constants';
 
@@ -34,6 +34,7 @@ export type CampaignDetailProps = {
   campaign: Record<string, any>;
   recipients: Record<string, any>[];
   canManage: boolean;
+  canEdit?: boolean;
   t: Translate;
   lang: Lang;
   now: Date;
@@ -91,6 +92,7 @@ export const CampaignDetail = ({
   campaign,
   recipients,
   canManage,
+  canEdit = true,
   t,
   lang,
   now,
@@ -103,6 +105,10 @@ export const CampaignDetail = ({
   const { call } = useCampaignActions();
 
   const [preflight, setPreflight] = useState<Preflight | null>(null);
+  const [preflightError, setPreflightError] = useState<string | null>(null);
+  const [preflightAttempt, setPreflightAttempt] = useState(0);
+  const acting = useRef(false);
+  const confirming = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [acknowledgeQuality, setAcknowledgeQuality] = useState(false);
@@ -110,20 +116,30 @@ export const CampaignDetail = ({
   const campaignId = campaign.id as string;
   const status = (campaign.status ?? null) as string | null;
 
+  const preflightRevision = status === 'READY' || status === 'DRAFT' ? campaign.updatedAt : status;
   useEffect(() => {
+    let active = true;
+    setPreflight(null);
+    setPreflightError(null);
+    setAcknowledgeQuality(false);
     void call<Preflight>('preflight', { campaignId }).then((result) => {
+      if (!active) return;
       if (result.ok) setPreflight(result.data);
-      else setError(result.error);
+      else setPreflightError(result.error);
     });
-  }, [call, campaignId]);
+    return () => { active = false; };
+  }, [call, campaignId, preflightRevision, preflightAttempt]);
 
   const run = useCallback(
     async (action: Parameters<typeof call>[0], body: Record<string, unknown> = {}) => {
+      if (acting.current) return;
+      acting.current = true;
       setBusy(true);
       setError(null);
 
       const result = await call(action, { campaignId, ...body });
 
+      acting.current = false;
       setBusy(false);
 
       if (!result.ok) setError(result.error);
@@ -144,6 +160,10 @@ export const CampaignDetail = ({
       action: Parameters<typeof call>[0],
       accent: 'default' | 'danger' = 'default',
     ) => {
+      if (confirming.current || acting.current) return;
+      confirming.current = true;
+      setBusy(true);
+      try {
       const answer = await openCommandConfirmationModal({
         title,
         subtitle,
@@ -154,8 +174,14 @@ export const CampaignDetail = ({
       // Anything that is not an explicit confirmation is a refusal, including a
       // dialog the host closed for its own reasons.
       if (answer === 'confirm') await run(action);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : t('error.unknown'));
+      } finally {
+        confirming.current = false;
+        setBusy(false);
+      }
     },
-    [run],
+    [run, t],
   );
 
   /**
@@ -169,31 +195,32 @@ export const CampaignDetail = ({
    * server-side rather than deleted by a stale screen.
    */
   const remove = useCallback(async () => {
-    const answer = await openCommandConfirmationModal({
-      title: t('campaign.delete'),
-      subtitle: t('campaign.deleteSubtitle'),
-      confirmButtonText: t('campaign.delete'),
-      confirmButtonAccent: 'danger',
-    });
-
-    if (answer !== 'confirm') return;
-
+    if (confirming.current || acting.current) return;
+    confirming.current = true;
     setBusy(true);
     setError(null);
-
-    const result = await call('delete', { campaignId });
-
-    setBusy(false);
-
-    if (!result.ok) setError(result.error);
-    else onDeleted();
+    try {
+      const answer = await openCommandConfirmationModal({
+        title: t('campaign.delete'), subtitle: t('campaign.deleteSubtitle'),
+        confirmButtonText: t('campaign.delete'), confirmButtonAccent: 'danger',
+      });
+      if (answer !== 'confirm') return;
+      const result = await call('delete', { campaignId });
+      if (!result.ok) setError(result.error);
+      else onDeleted();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('error.unknown'));
+    } finally {
+      confirming.current = false;
+      setBusy(false);
+    }
   }, [call, campaignId, onDeleted, t]);
 
   const deletion = canDeleteCampaign(campaign);
   const archived = isArchivedCampaign(campaign);
   const archivable = canArchiveCampaign(campaign);
 
-  const label = { fontSize: theme.font.size.xs, color: theme.font.color.tertiary };
+  const label = { fontSize: theme.font.size.xs, color: theme.font.color.secondary };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[2] }}>
@@ -205,7 +232,7 @@ export const CampaignDetail = ({
           flexWrap: 'wrap',
         }}
       >
-        <ActionButton label={t('campaign.title')} icon="back" onClick={onBack} />
+        <ActionButton label={t('campaign.title')} icon="back" disabled={busy} onClick={onBack} />
         <span
           style={{
             fontWeight: theme.font.weight.semiBold,
@@ -223,7 +250,7 @@ export const CampaignDetail = ({
               alignItems: 'center',
               gap: theme.spacing[1],
               fontSize: theme.font.size.xs,
-              color: theme.font.color.tertiary,
+              color: theme.font.color.secondary,
             }}
           >
             <Glyph name="running" />
@@ -293,7 +320,7 @@ export const CampaignDetail = ({
           be launched against a template they were not resolved for (D-28).
         */}
         {canManage && (status === 'DRAFT' || status === 'READY') ? (
-          <ActionButton label={t('campaign.edit')} icon="edit" onClick={onEdit} />
+          <ActionButton label={t('campaign.edit')} icon="edit" disabled={busy || !canEdit} onClick={onEdit} />
         ) : null}
         {canManage && (status === 'RUNNING' || status === 'TIER_WAITING') ? (
           <ActionButton
@@ -363,6 +390,12 @@ export const CampaignDetail = ({
       </div>
 
       {error === null ? null : <Banner tone="danger">{error}</Banner>}
+      {preflightError === null ? null : (
+        <Banner tone="danger">
+          {preflightError}
+          <ActionButton label={t('common.retry')} icon="retry" onClick={() => setPreflightAttempt((attempt) => attempt + 1)} />
+        </Banner>
+      )}
 
       {/*
         Said on the record itself, not only in the list it is missing from: this
@@ -378,7 +411,7 @@ export const CampaignDetail = ({
         </Banner>
       ) : null}
 
-      {canManage && status === 'READY' && preflight === null && error === null ? (
+      {canManage && status === 'READY' && preflight === null && preflightError === null ? (
         <Banner>{t('campaign.launchNeedsPreflight')}</Banner>
       ) : null}
 
@@ -656,7 +689,7 @@ export const CampaignDetail = ({
         <div style={{ overflowX: 'auto' }}>
           <table style={{ borderCollapse: 'collapse', fontSize: theme.font.size.xs, width: '100%' }}>
             <thead>
-              <tr style={{ textAlign: 'left', color: theme.font.color.tertiary }}>
+              <tr style={{ textAlign: 'left', color: theme.font.color.secondary }}>
                 <th style={{ padding: theme.spacing[1] }}>{t('campaign.col.phone')}</th>
                 <th style={{ padding: theme.spacing[1] }}>{t('campaign.col.status')}</th>
                 <th style={{ padding: theme.spacing[1] }}>{t('campaign.col.reason')}</th>
@@ -685,7 +718,7 @@ export const CampaignDetail = ({
                     style={{
                       padding: theme.spacing[1],
                       borderTop: `1px solid ${theme.border.color.light}`,
-                      color: theme.font.color.tertiary,
+                      color: theme.font.color.secondary,
                     }}
                   >
                     {recipient.exclusionReason === null ||

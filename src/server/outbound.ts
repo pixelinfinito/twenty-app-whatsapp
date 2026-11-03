@@ -10,13 +10,11 @@ import {
   type TemplateCategory,
 } from '../domain/constants';
 import type { SendSpec } from '../domain/send-spec';
+import { copyMessageMedia } from './retained-media';
 import type { ResolvedParameters } from '../domain/template-render';
 import { scheduleSend } from './schedule';
 import type { WhatsappAccountRecord } from './repositories/accounts';
-import {
-  createMessage,
-  type WhatsappMessageRecord,
-} from './repositories/messages';
+import { createMessage, type WhatsappMessageRecord } from './repositories/messages';
 import type { WhatsappThreadRecord } from './repositories/threads';
 
 /**
@@ -87,7 +85,54 @@ export const queueOutbound = async ({
   template = null,
   schedule = true,
 }: QueueOutboundInput): Promise<WhatsappMessageRecord> => {
+  // Reused files cannot be attached twice in Twenty: copy them into the new message field.
+  if (sourceKind !== SOURCE_KIND.CAMPAIGN) {
+    if (spec.kind === 'media' && !spec.fileId && (spec.fileUrl || spec.filePath)) {
+      const copied = await copyMessageMedia(
+        { url: spec.fileUrl, path: spec.filePath },
+        spec.filename ?? 'Media',
+        spec.mediaKind,
+      );
+      spec = { ...spec, fileId: copied.id, filePath: copied.path, fileUrl: null };
+    } else if (
+      template?.parameters?.header?.kind === 'media' &&
+      !template.parameters.header.fileId &&
+      !template.parameters.header.mediaId
+    ) {
+      const header = template.parameters.header;
+      if (header.fileUrl || header.filePath) {
+        const copied = await copyMessageMedia(
+          { url: header.fileUrl, path: header.filePath },
+          header.filename ?? 'Header media',
+          'document',
+        );
+        template = {
+          ...template,
+          parameters: {
+            ...template.parameters,
+            header: { ...header, fileId: copied.id, filePath: copied.path, fileUrl: null },
+          },
+        };
+      }
+    }
+  }
+  const header = template?.parameters?.header;
+  const fileId =
+    spec.kind === 'media' ? spec.fileId : header?.kind === 'media' ? header.fileId : null;
+  const filename =
+    spec.kind === 'media' ? spec.filename : header?.kind === 'media' ? header.filename : null;
   const message = await createMessage({
+    ...(fileId && sourceKind !== SOURCE_KIND.CAMPAIGN
+      ? { mediaFile: [{ fileId, label: filename ?? 'Media' }] }
+      : {}),
+    ...(fileId
+      ? {
+          mediaMeta: {
+            filename: filename ?? 'Media',
+            ...(spec.kind === 'media' ? { voice: spec.voice === true } : {}),
+          },
+        }
+      : {}),
     threadId: thread.id,
     direction: DIRECTION.OUTBOUND,
     messageType: messageTypeForSpec(spec),

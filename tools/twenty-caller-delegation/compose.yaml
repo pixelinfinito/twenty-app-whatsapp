@@ -1,0 +1,21 @@
+name: whatsapp-mcp-local
+services:
+  twenty:
+    image: twenty-whatsapp-mcp-dev:2.54.0-caller-v1
+    pull_policy: never
+    container_name: twenty-whatsapp-mcp-dev
+    restart: unless-stopped
+    ports:
+      - "2021:2021"
+    environment:
+      NODE_PORT: "2021"
+      SERVER_URL: http://localhost:2021
+      MARKETPLACE_CATALOG_SYNC_CRON_ENABLED: "false"
+    volumes:
+      - data:/data/postgres
+      - storage:/app/packages/twenty-server/.local-storage
+volumes:
+  data:
+    name: twenty-whatsapp-mcp-dev-data
+  storage:
+    name: twenty-whatsapp-mcp-dev-storage

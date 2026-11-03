@@ -1200,6 +1200,8 @@ signed-in workspace administrator, and `permissions.workspaceMemberId` comes bac
 which is also why that field is now on the wire, so a null on a signed-in human is *visible*
 rather than indistinguishable from having no roles.
 
+> **Superseded on Twenty 2.54:** native file selection now delivers readable files; see D-70 below. This account describes the old platform limitation.
+
 ### Field correction (2026-08-18) — a picked file's bytes never cross the bridge
 
 The `FileReader` row above was read as licence for a device file picker in the attachment
@@ -1224,6 +1226,8 @@ remains the recorder's plumbing.
 ---
 
 ## D-54 — Twenty MCP orchestrates; it does not become a second outbound pipeline
+
+> The template-only scope and release probe below are superseded by the full tool surface and caller-delegation implementation in spec 17. The single outbound pipeline remains mandatory.
 
 **Status: SPECIFIED, with a release-blocking authorisation probe** · See
 [17-twenty-mcp-agent-messaging.md](17-twenty-mcp-agent-messaging.md).
@@ -1251,3 +1255,56 @@ Twenty MCP tool → shared template-send service → queued interactive message
 headers or tool-level identity parameter to the handler. Therefore production exposure is gated on
 P-MCP-1 proving that Twenty refuses the tool to a credential without the intended WhatsApp role.
 If it does not, the send tool does not ship; caller-supplied identity is not an acceptable fallback.
+
+---
+
+> **Retired by D-70:** the S3 attachment workaround and its runtime configuration have been removed.
+
+## D-69 — A second HTTP exception: the S3 picker copies into Twenty storage first
+
+**Status: DECIDED** · 2026-08-19. Amends AR-11/D-18's allow-list; the operator asked for a full
+file-picker experience after the device source was retired (D-53 field correction).
+
+The attachment panel gains an optional third source: an S3-compatible bucket (AWS S3, R2,
+MinIO), browsed folder-by-folder over `ListObjectsV2` and signed with a hand-rolled SigV4
+(`server/s3-sigv4.ts` — reproduces AWS's published test vectors; the SDK would be the largest
+dependency in the bundle for two request shapes). `server/s3.ts` joins `server/files.ts` in the
+architecture test's `HTTP_CALLERS` allow-list, with its own construction assertions:
+
+- **The origin is configuration, never input.** Every URL is built from `WA_S3_ENDPOINT` +
+  `WA_S3_BUCKET`; keys are percent-encoded segment by segment, `..` segments are refused, and
+  every prefix/key must sit under the optional `WA_S3_PREFIX` root.
+- **Redirects are errors here**, not followed — unlike `files.ts`, whose storage backend
+  legitimately 302s. This endpoint *is* the storage, so a 3xx only ever means a wrong region or
+  endpoint, and the answer names that likely cause.
+- **The secret** (`WA_S3_SECRET_ACCESS_KEY`, an optional server variable) is readable by three
+  modules — the config declaration, the signer, the log redactor — and the architecture test
+  holds the list.
+
+**The send path is untouched, by design.** A pick *copies* the object into Twenty storage
+(`server/message-files.ts`, the store half extracted from `wa-upload-route`) and hands the panel
+an ordinary workspace file handle. The sender's "only workspace files are fetched" rule (D-58)
+needs no amendment, the file appears in "recent" and the attachments search afterwards, and a
+bucket the operator later disconnects takes nothing already sent with it. The cost is duplicate
+storage per picked object, accepted deliberately over teaching `resolveMediaId` a second byte
+source.
+
+Its own route (`/s/whatsapp/s3`, agent-gated, `timeoutSeconds: 120` — the media worker's number,
+for the same down-then-up journey) rather than more thread actions: the thread route answers in
+30 seconds, and a pick moves up to `WA_S3_MAX_IMPORT_BYTES` (default 25 MB, bounded further by
+Meta's per-kind ceilings) twice. Files over the cap are listed greyed with the reason, not
+hidden. Twenty's connections platform was considered and does not fit: it is OAuth-only, and S3
+credentials are a static key pair.
+
+
+## D-70 — Native uploads replace attachment workarounds (Twenty 2.54)
+
+The app requires Twenty 2.54.0. File inputs deliver native readable File objects, and `uploadFile(blob, { fieldMetadataId, fileName })` uploads through the host. Runtime field metadata IDs come from the authenticated feed; universal identifiers are never passed to this host API.
+
+Chat defaults to device files and offers recent conversation files. Template headers, campaign headers and voice recordings use the same upload adapter. New message files attach to `whatsappMessage.mediaFile` before scheduling; campaign header uploads attach to `whatsappCampaign.headerMediaFile` when the draft mapping is saved. Cancelled temporary uploads follow Twenty's cleanup lifecycle.
+
+S3 browsing, workspace-wide attachment search, manual URL inputs, the base64 route and its 8 MB cap are removed. Existing saved URL/path handles remain supported internally. New sends retain canonical storage paths and file IDs, and server-side media validation remains authoritative.
+
+Twenty 2.54 forbids forwarding credential headers. HTTP handlers use the platform-supplied execution context for identity and re-check the role map. Repositories use clients configured with `runAs: 'application'` so users cannot write protected message/thread records directly.
+
+Twenty 2.54 serves retained media at `/file/files-field/<fileId>?token=...`. The sender refreshes signed URLs from message/campaign FILES fields for each send. Permanent files cannot be attached twice: recent-file reuse copies into a new message upload before queueing.

@@ -16,6 +16,7 @@ vi.mock('../server/template-send', () => ({
 }));
 
 import {
+  handler,
   INVALID_REQUEST_ID,
   isUuidV4,
   runSendTemplateTool,
@@ -100,4 +101,12 @@ describe('whatsapp-send-template MCP tool', () => {
       replayed: false,
     });
   });
+});
+
+it('preserves the send denial envelope when delegation is unavailable', async () => {
+  expect(await handler({
+    personId: '33e0a280-8586-4fc4-ae76-ddcd56d420ce',
+    templateId: 'ec6c5663-0f92-4dca-8e11-a8dc8e2da690',
+    parameters: {}, requestId: 'd5a3cb22-1eea-4bcf-bb3f-e4e25dfd3819',
+  })).toMatchObject({ status: 'denied', denialReason: 'PLATFORM_UPGRADE_REQUIRED', messageId: null, threadId: null, replayed: false });
 });

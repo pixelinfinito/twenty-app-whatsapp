@@ -1,5 +1,6 @@
 import { CoreApiClient } from 'twenty-client-sdk/core';
 import { MetadataApiClient } from 'twenty-client-sdk/metadata';
+import { toolScope } from './tool-scope';
 
 /**
  * Memoised API clients.
@@ -13,20 +14,25 @@ import { MetadataApiClient } from 'twenty-client-sdk/metadata';
 let core: CoreApiClient | null = null;
 let metadata: MetadataApiClient | null = null;
 
-export const coreClient = (): CoreApiClient => (core ??= new CoreApiClient());
+export const applicationCoreClient = (): CoreApiClient =>
+  (core ??= new CoreApiClient({ runAs: 'application' }));
 
-export const metadataClient = (): MetadataApiClient => (metadata ??= new MetadataApiClient());
+export const coreClient = (): CoreApiClient => {
+  const app = applicationCoreClient();
+  const scoped = toolScope();
+  if (!scoped || scoped.applicationReads) return app;
+  // Reads enforce the invoking principal's field and row permissions. App-owned
+  // mutations remain behind the shared operation's validation and role gates.
+  return new Proxy(app, {
+    get(target, property) {
+      if (property === 'query') return scoped.readClient.query.bind(scoped.readClient);
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+};
 
-/**
- * A metadata client that speaks as the **caller**, not as the app.
- *
- * Deliberately not memoised: the token identifies a person, and handing one
- * request's identity to the next is the whole class of bug this exists to
- * avoid. Used only by `requireCaller`, to ask the platform who the bearer of
- * this token is (SEC-5, D-53).
- */
-export const callerMetadataClient = (bearerToken: string): MetadataApiClient =>
-  new MetadataApiClient({ headers: { authorization: `Bearer ${bearerToken}` } });
+export const metadataClient = (): MetadataApiClient => (metadata ??= new MetadataApiClient({ runAs: 'application' }));
 
 /** Test seam. Also the correct response to a token rotation mid-process. */
 export const resetClients = (): void => {

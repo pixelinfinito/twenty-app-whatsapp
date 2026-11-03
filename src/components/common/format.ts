@@ -12,6 +12,15 @@ import type { Lang, Translate } from './copy';
 
 export const CHAT_TIME_ZONE = 'Africa/Luanda';
 
+/** datetime-local uses the browser's zone; UTC slicing shifts reopened schedules. */
+export const browserDateTime = (value: string | null | undefined): string => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const pad = (number: number) => String(number).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
 const LOCALE: Record<Lang, string> = { pt: 'pt-PT', en: 'en-GB' };
 
 const formatter = (lang: Lang, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat =>

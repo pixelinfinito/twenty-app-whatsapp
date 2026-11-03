@@ -156,7 +156,7 @@ export const QuoteStrip = ({ quote, t, onDismiss, onOpen }: QuoteStripProps) => 
             border: 'none',
             borderRadius: theme.border.radius.sm,
             background: 'transparent',
-            color: theme.font.color.tertiary,
+            color: theme.font.color.secondary,
             cursor: 'pointer',
           }}
         >

@@ -205,6 +205,7 @@ const projectMedia = (source: MessageSource): MediaProjection | null => {
 
   return {
     kind: stringOrNull(source.messageType),
+    fileId: stringOrNull(file?.fileId),
     mimeType: stringOrNull(meta?.mimeType),
     /**
      * `filename`, not `fileName`. Meta spells it lowercase and so does

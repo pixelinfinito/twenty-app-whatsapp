@@ -1,36 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { RestApiClient } from 'twenty-client-sdk/rest';
 import { useTheme } from 'twenty-ui/theme-constants';
 
 import type { Translate } from '../../common/copy';
-import { duration as formatDuration } from '../../common/format';
+import { duration as formatDuration, fileSize } from '../../common/format';
 import { Glyph } from '../../common/icons';
-import { uploadDeviceFile } from './upload';
+import { createUploadGeneration, FileUploadError, uploadDeviceFile, type SelectedFile } from './upload';
 
-/**
- * Recording a voice message (spec §"What can be delivered now", item 3).
- *
- * `MediaRecorder` produces the bytes inside the page, so there is nothing to
- * read from disk. (This used to be described as the *only* attachment path the
- * sandbox allows; the D-53 probe later showed `Blob.arrayBuffer()` works on a
- * picked `File` too, and the attachment panel now shares this pipeline — see
- * `builders/upload.ts`.)
- *
- * The rest is deliberately unglamorous:
- *
- * - **`Blob` → base64 → `POST /whatsapp/upload` → `sendMedia`.** The page has
- *   no token for Twenty's upload mutation, so an authenticated route does the
- *   storing (see `wa-upload-route`).
- * - **Every track is stopped when the panel closes.** A `getUserMedia` stream
- *   left running keeps the browser's recording indicator lit and the microphone
- *   open — in a CRM tab that stays open all day, indefinitely.
- * - **Permission denial is a sentence, not a dead button.** The two failures a
- *   rep can actually act on — no API, or no permission — say which one happened.
- * - **The `<audio>` review step uses native controls.** A custom player would
- *   call `element.play()` through a ref, and a ref method call throws here.
- */
-
+/** Native recording, host upload, and server-authorized sending. */
 export type VoicePanelProps = {
+  fieldMetadataId?: string | null;
   t: Translate;
   isSending: boolean;
   /**
@@ -39,7 +17,7 @@ export type VoicePanelProps = {
    * be a second way to do the same thing, one of which would eventually forget
    * to release the stream.
    */
-  onSend: (input: { fileUrl: string; filePath: string; filename: string }) => void;
+  onSend: (input: { fileId: string; fileUrl: string; filePath: string; filename: string }) => Promise<boolean>;
 };
 
 type Phase = 'idle' | 'recording' | 'review' | 'uploading' | 'unavailable' | 'denied';
@@ -94,9 +72,14 @@ const EXTENSION: Record<string, string> = {
   'audio/mpeg': 'mp3',
 };
 
-export const VoicePanel = ({ t, isSending, onSend }: VoicePanelProps) => {
+export const VoicePanel = ({ fieldMetadataId, t, isSending, onSend }: VoicePanelProps) => {
   const theme = useTheme();
-  const client = useRef(new RestApiClient());
+  const uploadGeneration = useRef(createUploadGeneration());
+  const uploading = useRef(false);
+  const submitted = useRef(false);
+  const active = useRef(true);
+  const starting = useRef(false);
+  useEffect(() => () => uploadGeneration.current.invalidate(), []);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
@@ -106,6 +89,7 @@ export const VoicePanel = ({ t, isSending, onSend }: VoicePanelProps) => {
   const [seconds, setSeconds] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [blob, setBlob] = useState<Blob | null>(null);
+  const [stored, setStored] = useState<SelectedFile | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   /**
@@ -116,12 +100,23 @@ export const VoicePanel = ({ t, isSending, onSend }: VoicePanelProps) => {
     if (ticker.current !== null) clearInterval(ticker.current);
     ticker.current = null;
 
+    if (recorder.current !== null) {
+      recorder.current.ondataavailable = null;
+      recorder.current.onstop = null;
+      if (recorder.current.state !== 'inactive') recorder.current.stop();
+    }
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = null;
     recorder.current = null;
   }, []);
 
-  useEffect(() => release, [release]);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      release();
+    };
+  }, [release]);
 
   useEffect(
     () => () => {
@@ -131,6 +126,7 @@ export const VoicePanel = ({ t, isSending, onSend }: VoicePanelProps) => {
   );
 
   const start = async () => {
+    if (starting.current || recorder.current !== null) return;
     const type = supportedType();
 
     if (type === null || globalThis.navigator?.mediaDevices === undefined) {
@@ -139,13 +135,19 @@ export const VoicePanel = ({ t, isSending, onSend }: VoicePanelProps) => {
       return;
     }
 
+    starting.current = true;
     try {
       const media = await globalThis.navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!active.current) {
+        media.getTracks().forEach((track) => track.stop());
+        return;
+      }
 
       stream.current = media;
       chunks.current = [];
 
       const instance = new MediaRecorder(media, { mimeType: type });
+      const startedAt = Date.now();
 
       instance.ondataavailable = (event) => {
         if (event.data.size > 0) chunks.current.push(event.data);
@@ -153,11 +155,13 @@ export const VoicePanel = ({ t, isSending, onSend }: VoicePanelProps) => {
 
       instance.onstop = () => {
         const recorded = new Blob(chunks.current, { type });
+        const duration = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
 
         setBlob(recorded);
+        setSeconds(duration);
         setPreviewUrl(URL.createObjectURL(recorded));
-        setPhase('review');
         release();
+        void upload(recorded, duration);
       };
 
       recorder.current = instance;
@@ -170,44 +174,67 @@ export const VoicePanel = ({ t, isSending, onSend }: VoicePanelProps) => {
       // Both "the rep said no" and "there is no microphone" land here, and the
       // browser deliberately does not distinguish them. The recoverable one is
       // the likelier one, so that is what the message says.
-      setPhase('denied');
+      if (active.current) setPhase('denied');
       release();
+    } finally {
+      starting.current = false;
     }
   };
 
   const stop = () => recorder.current?.stop();
 
   const discard = () => {
+    uploadGeneration.current.invalidate();
+    uploading.current = false;
     release();
     setBlob(null);
+    setStored(null);
     setPreviewUrl(null);
     setSeconds(0);
     setError(null);
     setPhase('idle');
   };
 
-  const upload = async () => {
-    if (blob === null) return;
+  const upload = async (recorded: Blob, duration: number) => {
+    if (uploading.current || isSending) return;
+    const ticket = uploadGeneration.current.next();
+    uploading.current = true;
 
     setPhase('uploading');
     setError(null);
+    setStored(null);
 
     try {
-      const contentType = declaredType(blob.type);
-      const filename = `voice-${seconds}s.${EXTENSION[contentType] ?? 'ogg'}`;
+      const contentType = declaredType(recorded.type);
+      const filename = `voice-${duration}s.${EXTENSION[contentType] ?? 'ogg'}`;
 
       const stored = await uploadDeviceFile({
-        client: client.current,
-        blob,
+        fieldMetadataId,
+        blob: recorded,
         filename,
-        contentType,
-        mediaKind: 'audio',
+        requiredKind: 'audio',
       });
 
-      onSend({ fileUrl: stored.fileUrl, filePath: stored.filePath, filename });
+      if (uploadGeneration.current.current(ticket)) {
+        setStored(stored);
+        setPhase('review');
+      }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('chat.recordUploadFailed'));
+      if (!uploadGeneration.current.current(ticket)) return;
+      setError(caught instanceof FileUploadError ? t(`upload.error.${caught.code}`) : t('chat.recordUploadFailed'));
       setPhase('review');
+    } finally {
+      if (uploadGeneration.current.current(ticket)) uploading.current = false;
+    }
+  };
+
+  const send = async () => {
+    if (!stored || isSending || submitted.current) return;
+    submitted.current = true;
+    try {
+      await onSend({ fileId: stored.fileId, fileUrl: stored.url, filePath: stored.path, filename: stored.filename });
+    } finally {
+      submitted.current = false;
     }
   };
 
@@ -242,7 +269,6 @@ export const VoicePanel = ({ t, isSending, onSend }: VoicePanelProps) => {
         padding: theme.spacing[2],
         flex: '1 1 auto',
         minHeight: 0,
-        overflowY: 'auto',
       }}
     >
 
@@ -278,12 +304,17 @@ export const VoicePanel = ({ t, isSending, onSend }: VoicePanelProps) => {
         </span>
       ) : null}
 
-      {phase === 'review' && previewUrl !== null ? (
+      {(phase === 'review' || phase === 'uploading') && previewUrl !== null ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[1] }}>
-          <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}>
+          <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
             {t('chat.recordReview')}
           </span>
           <audio controls src={previewUrl} style={{ width: '100%' }} />
+          {stored ? (
+            <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
+              {stored.filename} · {fileSize(stored.size)}
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -334,15 +365,20 @@ export const VoicePanel = ({ t, isSending, onSend }: VoicePanelProps) => {
           </button>
         ) : null}
 
-        {phase === 'review' ? (
+        {phase === 'review' || phase === 'uploading' ? (
           <>
-            <button type="button" onClick={discard} style={quiet}>
+            <button type="button" disabled={isSending} onClick={discard} style={quiet}>
               {t('chat.recordDiscard')}
             </button>
+            {error !== null && blob !== null ? (
+              <button type="button" onClick={() => void upload(blob, seconds)} style={quiet}>
+                {t('upload.retry')}
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={() => void upload()}
-              disabled={isSending}
+              onClick={() => void send()}
+              disabled={isSending || stored === null}
               style={primary}
             >
               <Glyph name="send" size="md" />

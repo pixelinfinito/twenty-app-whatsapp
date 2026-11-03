@@ -2,21 +2,22 @@
 
 All notable changes to this application are documented in this file.
 
-## Unreleased — the attachment panel loses a dead tab and gains a picker
+## Unreleased — UI/UX review
 
-- **"From this device" is gone.** The sandbox bridge hands a picked file's metadata over without
-  its bytes — `arrayBuffer()` is absent on the proxy and `FileReader` cannot read it either — so
-  every device pick failed at upload (D-53 field correction, specs/00). The platform docs said so
-  all along; the probe result that seemed to disprove them had only measured a blob the page
-  *created*, which is why voice notes still work. A tab whose every pick fails is worse than no
-  tab.
-- **"Already in Twenty" opens as a picker.** A new `fileSearch` action on the thread route answers
-  the workspace's attachments — newest first, name-searchable, debounced like the campaign
-  builder's contact search — and choosing a row fills the address, filename and kind boxes, so
-  nobody has to hunt down a file URL by hand. The suggested kind is judged conservatively from the
-  stored file's extension (`mediaKindForFilename`): a webp or a .mov is offered as a document,
-  which arrives, rather than as media Meta will refuse. The boxes stay editable — a file the
-  search cannot see can still be pasted, and the send path itself is unchanged.
+- Give chat a full-width expanding message box and a compact icon toolbar with keyboard-accessible tooltips; separate template selection from Send and improve Send contrast in dark mode.
+- Keep drafts, selected uploads and template parameters after refused sends; prevent duplicate submissions and accidental sends during IME composition.
+- Fit the composer and attachment actions in narrow/short widgets, account for Twenty's UI scaling, and fix clipped delivery ticks.
+- Recover from failed campaign detail/preflight/search/preview reads, preserve schedule time zones and clearing, and add explicit Save draft.
+- Scope inbox shortcuts to the list, retain the selected filter, and show conversation action failures.
+- Improve text contrast, keyboard focus, field descriptions, upload guidance and settings feedback. Campaign layouts respond immediately to pane width.
+- Add 24 UI regression tests, 5 draft-route tests and a draft-persistence integration test. See `reports/ui-ux-audit-2026-11-03.md` for findings and validation.
+
+## Unreleased — native attachments on Twenty 2.54
+
+- Device files upload directly through Twenty's host API, with image previews, validation, replacement, removal and retry. Recent conversation files remain available for reuse.
+- Templates, campaign media headers and voice recordings share the same upload path. Saved campaign drafts and queued messages retain their files through FILES associations.
+- Removed the S3 browser, workspace-wide attachment search, manual URL fields and base64 upload route.
+- Require Twenty 2.54.0, with matching SDKs and standalone CLI. Route authorization now uses the platform execution context; server repositories explicitly use application access. Updated phone/actor selections for the 2.54 schema.
 
 ## Unreleased — end-to-end QA fixes
 

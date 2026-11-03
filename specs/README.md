@@ -1,7 +1,7 @@
 # twenty-whatsapp — Implementation Specifications
 
 Implementation-level specs derived from **TRD v1.1 (2026-08-15)**, grounded in the SDK
-actually installed in this repo (`twenty-sdk@2.31.0`, `twenty-client-sdk@2.31.0`) and in the
+actually installed in this repo (`twenty-sdk@2.54.0`, `twenty-client-sdk@2.54.0`) and in the
 first-party Twenty apps that use the same surfaces (`packages/twenty-apps/public/slack`,
 `.../examples/postcard`).
 
@@ -30,7 +30,7 @@ recorded in [`00-architecture-decisions.md`](00-architecture-decisions.md) — r
 | 14 | [Open questions](14-open-questions.md) | Q-1…Q-16 with owners and deadlines |
 | 15 | [Implementation task plan](15-implementation-tasks.md) | **Live build status** — what is done, what remains, critical path, remaining probes |
 | 16 | [Release checklist](16-release-checklist.md) | The signed, human-run part: install rehearsal, the scripted E2E loop, the operational procedures, the load run |
-| 17 | [Twenty MCP agent messaging](17-twenty-mcp-agent-messaging.md) | Agent contact discovery, eligible-template tool, idempotent guarded send tool, MCP permissions and rollout |
+| 17 | [Twenty MCP agent messaging](17-twenty-mcp-agent-messaging.md) | Full WhatsApp AI/MCP capabilities, caller delegation, scoped access, idempotency, confirmations and rollout |
 | A | [Meta Cloud API surface](appendix-a-meta-api.md) | Exact requests, payloads and webhook shapes used |
 | B | [Error catalog](appendix-b-error-catalog.md) | Meta error codes → system behaviour → user-facing copy |
 | C | [UUID registry](appendix-c-uuid-registry.md) | Every hand-assigned universal identifier |
@@ -62,10 +62,10 @@ These were checked against the installed SDK and the docs, not assumed:
 | Cross-workspace routing state lives in `kv` with `scope: 'SERVER'` | `slack/.../find-claimed-workspace-id.ts` |
 | Secrets reach logic functions as `process.env.<NAME>`, declared via `serverVariables` in the app config; secrets are never sent to front components | `docs/.../config/application.md`; `slack/src/application.config.ts` |
 | Background work is queued with `enqueueJob({logicFunctionUniversalIdentifier, payload, retryLimit, delayMs})` | `twenty-sdk/logic-function` |
-| Files are stored via `MetadataApiClient.uploadFile(buffer, filename, contentType, fieldUniversalIdentifier)` → `{id, path, size, url}` | `twenty-client-sdk/metadata` |
+| Files are stored via `MetadataApiClient.uploadFile({ fileBuffer, filename, fieldMetadataUniversalIdentifier })` → `{id, path, size, url}` | `twenty-client-sdk/metadata` |
 | Field universal identifiers can be **derived deterministically** with `getFieldUniversalIdentifier({applicationUniversalIdentifier, objectUniversalIdentifier, name})` (UUID v5) | `twenty-sdk/define`, verified by execution |
 | A tab can be added to the stock Person record page via `definePageLayoutTab({pageLayoutUniversalIdentifier: STANDARD_PAGE_LAYOUT.personRecordPage.universalIdentifier, …})` | `docs/.../page-layouts.md`; constant verified present |
-| Front components run in a Web Worker sandbox: no `IntersectionObserver`/`ResizeObserver`, no portals, no canvas, no `FileReader`, `scrollTop` assignment is a **no-op**, `document`/`window` listeners never fire | `docs/.../front-components.md` |
+| Front components run in a Web Worker sandbox: no `IntersectionObserver`/`ResizeObserver`, no portals, no canvas, native readable file inputs and host uploads; `scrollTop` assignment is a **no-op**, `document`/`window` listeners never fire | `docs/.../front-components.md` |
 | `timelineActivity` is a writable standard object with `targetPerson`, `linkedRecordId`, `linkedObjectMetadataId`, `name`, `happensAt`, `properties` | `STANDARD_OBJECT.timelineActivity` field list |
 | Twenty now ships `messageCampaign` / `messageList` / `messageListMember` standard objects (email-oriented) | `STANDARD_OBJECT` — newer than the TRD's platform survey; see D-13 |
 | There is **no** notification standard object exposed to apps | Full `STANDARD_OBJECT` enumeration; see D-10 |

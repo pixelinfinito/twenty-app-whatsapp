@@ -19,7 +19,7 @@
  * percentage wins and the surface fills its pane exactly; where it is not, the
  * cap bites and the surface scrolls internally. Neither case grows the page.
  */
-export const SURFACE_MAX_HEIGHT = '72vh';
+export const SURFACE_MAX_HEIGHT = 'calc(72dvh / var(--t-zoom, 1))';
 
 /**
  * The same workaround for a surface that owns a **whole page**.
@@ -30,13 +30,14 @@ export const SURFACE_MAX_HEIGHT = '72vh';
  * most. 72vh is the right answer for something sharing a record page and the
  * wrong one for something that *is* the page.
  *
- * The subtraction is the page's own chrome — its title bar — and it is
- * deliberately generous. Overshooting is the failure this module exists to
- * prevent: a surface taller than the space available scrolls the *page*, and
- * puts the composer below the fold. Undershooting costs a thin strip nobody
- * notices.
+ * Reserve 96 CSS pixels for the host title and notification banner. A rem
+ * subtraction used the host's 13px root font and reserved only 52px, placing
+ * Send 36px below the viewport. Use CSS pixels and the dynamic viewport so
+ * the whole composer stays visible even on short screens. Divide by Twenty’s
+ * zoom token: its mobile and user scaling otherwise enlarges the viewport
+ * height a second time and pushes the footer below the screen.
  */
-export const SURFACE_PAGE_HEIGHT = 'calc(100vh - 4rem)';
+export const SURFACE_PAGE_HEIGHT = 'calc(100dvh / var(--t-zoom, 1) - 96px)';
 
 /** Below this a chat is a viewport, not a conversation. */
-export const SURFACE_MIN_HEIGHT = '420px';
+export const SURFACE_MIN_HEIGHT = 'min(420px, 60dvh / var(--t-zoom, 1))';

@@ -179,14 +179,14 @@ const VariableRow = ({
             style={{
               fontSize: theme.font.size.xs,
               fontWeight: theme.font.weight.regular,
-              color: theme.font.color.tertiary,
+              color: theme.font.color.secondary,
             }}
           >
             {t('settings.variableEdited')}
           </span>
         ) : null}
       </span>
-      <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.tertiary }}>
+      <span style={{ fontSize: theme.font.size.sm, color: theme.font.color.secondary }}>
         {variable.description}
       </span>
 
@@ -369,7 +369,7 @@ export const VariablesPanel = ({
             <span style={{ fontSize: theme.font.size.md, color: theme.font.color.primary }}>
               {t('settings.unsavedChanges', { count: dirty.length })}
             </span>
-            <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}>
+            <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
               {dirty.join(', ')}
             </span>
           </div>

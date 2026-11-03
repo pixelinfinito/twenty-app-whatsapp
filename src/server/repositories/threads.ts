@@ -6,6 +6,7 @@ import type {
 } from '../../domain/constants';
 import { inBatches } from '../batching';
 import { nodesOf, pageOf, query, type JsonObject } from './base';
+import type { CoreSchema } from 'twenty-client-sdk/core';
 
 /**
  * `whatsappThread` — one conversation per (account, waId) (FR-THR-1).
@@ -444,6 +445,30 @@ export const listInboxThreads = async (
   const page = pageOf<WhatsappThreadRecord>(result.whatsappThreads);
 
   return { threads: page.items, nextCursor: page.nextCursor };
+};
+
+export const listToolThreads = async (spec: InboxFilterSpec, input: Record<string, unknown>) => {
+  const selectors = ['personId', 'accountId', 'assigneeId', 'status'] as const;
+  const extra: CoreSchema.WhatsappThreadFilterInput[] = [];
+  for (const key of selectors) {
+    const value = input[key];
+    if (value === null) extra.push({ [key]: { is: 'NULL' } });
+    else if (typeof value === 'string') extra.push({ [key]: { eq: value } });
+  }
+  const filter: CoreSchema.WhatsappThreadFilterInput = { and: [inboxFilterFor(spec), ...extra] };
+  const result = await query((client) => client.query({
+    whatsappThreads: {
+      __args: {
+        filter,
+        first: typeof input.first === 'number' ? input.first : 20,
+        ...(typeof input.after === 'string' ? { after: input.after } : {}),
+        orderBy: [{ lastMessageAt: 'DescNullsLast' }],
+      },
+      edges: { node: THREAD_FIELDS }, pageInfo: { hasNextPage: true, endCursor: true },
+    },
+  }), 'threads.listTool');
+  const page = pageOf<WhatsappThreadRecord>(result.whatsappThreads);
+  return { status: 'ready', data: { threads: page.items }, pageInfo: { nextCursor: page.nextCursor }, warnings: [] };
 };
 
 /** The 15-minute sweeper's read (FR-THR-5). */

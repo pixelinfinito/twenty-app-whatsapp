@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTheme } from 'twenty-ui/theme-constants';
 
 import {
@@ -16,7 +16,9 @@ import {
   type ResolvedParameters,
 } from '../../domain/template-render';
 import type { VariableSpec } from '../../domain/template-spec';
-import { isWorkspaceFileAddress } from '../../domain/workspace-file';
+import { FileUpload } from './builders/FileUpload';
+import type { SelectedFile } from './builders/upload';
+import { mediaKindForHeaderFormat } from '../../domain/media-limits';
 import type { Translate } from '../common/copy';
 import { Glyph } from '../common/icons';
 import type { FeedTemplate } from '../common/use-feed';
@@ -62,10 +64,11 @@ import type { FeedTemplate } from '../common/use-feed';
  */
 
 export type TemplatePickerProps = {
+  fieldMetadataId?: string | null;
   templates: FeedTemplate[];
   t: Translate;
   onCancel: () => void;
-  onSend: (templateId: string, parameters: ResolvedParameters) => void;
+  onSend: (templateId: string, parameters: ResolvedParameters) => Promise<boolean>;
   isSending: boolean;
 };
 
@@ -76,6 +79,7 @@ const specOf = (template: FeedTemplate | null): VariableSpec | null => {
 };
 
 export const TemplatePicker = ({
+  fieldMetadataId,
   templates,
   t,
   onCancel,
@@ -83,11 +87,12 @@ export const TemplatePicker = ({
   isSending,
 }: TemplatePickerProps) => {
   const theme = useTheme();
+  const submitted = useRef(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [values, setValues] = useState<string[]>([]);
   const [headerValues, setHeaderValues] = useState<string[]>([]);
   /** A media header's file, as an address in Twenty's own storage (D-59). */
-  const [headerFileUrl, setHeaderFileUrl] = useState('');
+  const [headerFile, setHeaderFile] = useState<SelectedFile | null>(null);
   /** Keyed by button index, because the indices are Meta's and need not be dense. */
   const [buttonValues, setButtonValues] = useState<Record<number, string>>({});
   /** Empty fields are marked only once a send has been attempted. */
@@ -124,7 +129,7 @@ export const TemplatePicker = ({
    * outside Twenty's file store fails for the recipient rather than here, so it
    * is caught while the box is still on screen (D-58).
    */
-  const headerFileValid = isWorkspaceFileAddress(headerFileUrl);
+  const headerFileValid = headerFile !== null;
 
   /**
    * Everything the validator counts, not just the body.
@@ -149,8 +154,9 @@ export const TemplatePicker = ({
             header: {
               kind: 'media' as const,
               mediaId: null,
-              fileId: null,
-              fileUrl: headerFileValid ? headerFileUrl.trim() : null,
+              fileId: headerFile?.fileId ?? null,
+              filePath: headerFile?.path ?? null,
+              filename: headerFile?.filename,
             },
           }
         : headerHints.length === 0
@@ -169,7 +175,7 @@ export const TemplatePicker = ({
       headerHints,
       buttonHints,
       mediaHeader,
-      headerFileUrl,
+      headerFile,
       headerFileValid,
     ],
   );
@@ -186,12 +192,17 @@ export const TemplatePicker = ({
 
   const ready = selected !== null && validation?.ok === true;
 
-  const submit = () => {
+  const submit = async () => {
     setAttempted(true);
 
-    if (!ready || isSending) return;
+    if (!ready || isSending || submitted.current) return;
+    submitted.current = true;
 
-    onSend(selected.id, parameters);
+    try {
+      await onSend(selected.id, parameters);
+    } finally {
+      submitted.current = false;
+    }
   };
 
   const control: React.CSSProperties = {
@@ -227,7 +238,7 @@ export const TemplatePicker = ({
       emphasis === 'loud'
         ? theme.font.color.inverted
         : emphasis === 'disabled'
-          ? theme.font.color.tertiary
+          ? theme.font.color.secondary
           : theme.font.color.secondary,
     cursor: emphasis === 'disabled' ? 'default' : 'pointer',
     fontFamily: theme.font.family,
@@ -284,7 +295,7 @@ export const TemplatePicker = ({
             <span
               style={{
                 flex: '0 0 auto',
-                color: theme.font.color.tertiary,
+                color: theme.font.color.secondary,
                 background: theme.background.transparent.light,
                 borderRadius: theme.border.radius.sm,
                 padding: `0 ${theme.spacing[1]}`,
@@ -302,12 +313,13 @@ export const TemplatePicker = ({
           <span style={{ flex: '1 1 auto', minWidth: 0 }}>
             {hint.context ?? hint.token}
           </span>
-          <span style={{ color: theme.font.color.light, flex: '0 0 auto' }}>
+          <span style={{ color: theme.font.color.secondary, flex: '0 0 auto' }}>
             {hint.token}
           </span>
         </label>
         <input
           id={id}
+          disabled={isSending}
           type="text"
           value={value}
           placeholder={hint.example ?? undefined}
@@ -343,6 +355,7 @@ export const TemplatePicker = ({
     <div
       className="wa-template-picker"
       style={{
+        flex: '1 1 auto',
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
@@ -366,6 +379,7 @@ export const TemplatePicker = ({
       >
         <select
           id="wa-template-select"
+          disabled={isSending}
           aria-label={t('chat.chooseTemplate')}
           value={effectiveId ?? ''}
           onChange={(event) => {
@@ -374,7 +388,7 @@ export const TemplatePicker = ({
             // values over would fill {{2}} with something meant for {{1}}.
             setValues([]);
             setHeaderValues([]);
-            setHeaderFileUrl('');
+            setHeaderFile(null);
             setButtonValues({});
             setAttempted(false);
           }}
@@ -401,7 +415,7 @@ export const TemplatePicker = ({
         }}
       >
         {templates.length === 0 ? (
-          <div style={{ fontSize: theme.font.size.sm, color: theme.font.color.tertiary }}>
+          <div style={{ fontSize: theme.font.size.sm, color: theme.font.color.secondary }}>
             {t('chat.noTemplates')}
           </div>
         ) : null}
@@ -439,7 +453,7 @@ export const TemplatePicker = ({
             }}
           >
             <span
-              style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}
+              style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}
             >
               {t('builder.preview')}
             </span>
@@ -465,7 +479,7 @@ export const TemplatePicker = ({
             </div>
             {preview.footer === null ? null : (
               <div
-                style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}
+                style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}
               >
                 {preview.footer}
               </div>
@@ -512,7 +526,7 @@ export const TemplatePicker = ({
               minHeight: '28px',
               border: 'none',
               background: 'transparent',
-              color: theme.font.color.tertiary,
+              color: theme.font.color.secondary,
               cursor: 'pointer',
               fontFamily: theme.font.family,
               fontSize: theme.font.size.xs,
@@ -533,30 +547,11 @@ export const TemplatePicker = ({
           component with no field. The same address rule as the attachment
           panel, because it is the same read on the server.
         */}
-        {mediaHeader === null
-          ? null
-          : field({
-              id: 'wa-template-header-media',
-              hint: {
-                token: t(`chat.templateHeader.${mediaHeader.format}`),
-                context: t('chat.templateHeaderMedia'),
-                /*
-                  A shape, not `mediaHeader.example`. Meta's synced example is a
-                  `header_handle` — an opaque upload token — which as a
-                  placeholder would look like an address a rep should copy and
-                  is the one thing here that cannot be.
-                */
-                example: t('chat.fileUrlPlaceholder'),
-              },
-              badge: t('chat.templateHeader'),
-              value: headerFileUrl,
-              errorCode: !attempted || headerFileValid
-                ? null
-                : isBlank(headerFileUrl)
-                  ? 'REQUIRED'
-                  : 'NOT_A_FILE_URL',
-              onChange: setHeaderFileUrl,
-            })}
+        {mediaHeader === null ? null : <FileUpload
+          key={effectiveId ?? 'none'} t={t} fieldMetadataId={fieldMetadataId}
+          value={headerFile} onChange={setHeaderFile} disabled={isSending}
+          requiredKind={mediaKindForHeaderFormat(mediaHeader.format) ?? 'document'}
+        />}
 
         {headerHints.map((hint, index) =>
           field({
@@ -632,18 +627,18 @@ export const TemplatePicker = ({
         }}
       >
         {selected === null || validation?.ok === true ? null : (
-          <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.tertiary }}>
+          <span style={{ fontSize: theme.font.size.xs, color: theme.font.color.secondary }}>
             {t('chat.missing')}: {validation?.missingKeys.length ?? 0}
           </span>
         )}
         <span style={{ flex: '1 1 auto' }} />
-        <button type="button" onClick={onCancel} style={action('quiet')}>
+        <button type="button" disabled={isSending} onClick={onCancel} style={action('quiet')}>
           {t('common.cancel')}
         </button>
         <button
           type="button"
-          onClick={submit}
-          disabled={isSending}
+          onClick={() => void submit()}
+          disabled={isSending || !ready}
           aria-label={t('chat.send')}
           style={action(ready && !isSending ? 'loud' : 'disabled')}
         >

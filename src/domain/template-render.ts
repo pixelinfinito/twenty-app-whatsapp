@@ -76,6 +76,7 @@ export type HeaderParameter =
       kind: 'media';
       mediaId: string | null;
       fileId: string | null;
+      filename?: string | null;
       filePath?: string | null;
       fileUrl?: string | null;
     }
