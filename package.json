@@ -1,6 +1,6 @@
 {
   "name": "@pixelinfinito/twenty-app-whatsapp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "WhatsApp for Twenty CRM — shared inbox, templates, consent-aware campaigns and delivery health on the Meta WhatsApp Cloud API.",
   "license": "MIT",
   "author": {

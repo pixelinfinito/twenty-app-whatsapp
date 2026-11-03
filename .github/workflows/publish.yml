@@ -55,7 +55,8 @@ jobs:
 
       - name: Update npm
         # Trusted publishing requires npm 11.5.1 or later.
-        run: npm install -g npm@12.0.2
+        # Twenty 2.54 expects npm 11's array-shaped pack JSON.
+        run: npm install -g npm@11.19.0
 
       - name: Enable the pinned Yarn version
         run: corepack enable

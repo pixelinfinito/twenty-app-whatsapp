@@ -2,7 +2,9 @@
 
 All notable changes to this application are documented in this file.
 
-## 0.2.0 — 2026-11-04
+## 0.2.1 — 2026-11-04
+
+Version 0.2.0 was tagged but not published because its packaging step failed. Version 0.2.1 pins the publisher to npm 11.19.0, whose `npm pack --json` output is compatible with Twenty CLI 2.54.0, and is the first npm release of these features.
 
 ### Added
 

@@ -57,3 +57,7 @@ A tested local Docker setup uses `http://localhost:2021` (MCP `/mcp`); see the [
 Install the [caller delegation v1 platform prerequisite](tools/twenty-caller-delegation/README.md) before applying the app. Stock Twenty 2.54 lacks the delegated identity required for restricted keys and autonomous agents; calls fail closed with `PLATFORM_UPGRADE_REQUIRED`. No new MCP server or Meta credentials in prompts are needed. Assign the appropriate WhatsApp role to each key/agent, refresh MCP discovery, and start with `app_whatsapp_get_capabilities`.
 
 See [the complete contracts and rollout procedure](specs/17-twenty-mcp-agent-messaging.md). The app includes a reusable WhatsApp skill. Offline checks never send messages; live validation needs a designated test recipient and campaign.
+
+## Publishing
+
+The Publish workflow uses Twenty CLI 2.54.0 and npm 11.19.0 with GitHub trusted publishing/provenance. Keep npm pinned: the CLI expects npm 11's array-shaped `npm pack --json` output, while npm 12 returns an object keyed by package name. Bump the package version, commit and push the source, then push the matching version tag to start publication.
