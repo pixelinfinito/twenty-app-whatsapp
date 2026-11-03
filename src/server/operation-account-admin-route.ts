@@ -16,11 +16,13 @@ import { MetaApiError } from '../providers/whatsapp/errors';
 import { AUDIT_ACTION, audit } from '../server/audit';
 import { authErrorResponse, requireCaller, requireRole } from '../server/auth';
 import { listVariables, setVariable } from '../server/variables';
-import { config } from '../server/config';
+import { config, parseCountryCallingCode } from '../server/config';
 import { describeError, logger } from '../server/logger';
 import { provisionNotificationWorkflow } from '../server/notification-workflow';
 import { budgetForAccount, tierFor } from '../server/tier-ledger';
+import { probeWebhookRoute } from '../server/webhook-route-probe';
 import { currentWorkspaceId } from '../server/workspace';
+import { consentWordingDrift } from '../logic-functions/wa-consent-keyword';
 import { syncAccount } from '../logic-functions/wa-template-sync';
 import { nodesOf, query } from '../server/repositories/base';
 import {
@@ -53,6 +55,7 @@ import { STUCK_MESSAGE_MS } from '../logic-functions/wa-health-check';
 
 export type AccountAction =
   | 'connect'
+  | 'updateAccount'
   | 'test'
   | 'disconnect'
   | 'list'
@@ -77,6 +80,35 @@ export type AccountRouteBody = {
   /** `setVariable` only. */
   key?: string;
   value?: string;
+};
+
+/**
+ * The submitted calling code, normalised — or the refusal, as one value.
+ *
+ * `undefined` means the caller did not send the field at all, which must stay
+ * distinguishable from "sent it empty": the first leaves the stored value
+ * alone, the second clears it back to the `WA_DEFAULT_COUNTRY_CALLING_CODE`
+ * fallback. Collapsing the two would make the field impossible to unset.
+ */
+const readCallingCode = (
+  body: AccountRouteBody,
+): { ok: true; value: string | null | undefined } | { ok: false; error: string } => {
+  const raw = body.defaultCountryCallingCode;
+
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (raw === null || raw.trim() === '') return { ok: true, value: null };
+
+  const parsed = parseCountryCallingCode(raw);
+
+  if (parsed === null) {
+    return {
+      ok: false,
+      error:
+        'defaultCountryCallingCode must be a country calling code of 1-3 digits, such as +244 — not a full phone number',
+    };
+  }
+
+  return { ok: true, value: parsed };
 };
 
 const QUALITY_FROM_META: Record<string, Quality> = {
@@ -288,8 +320,23 @@ const diagnostics = async () => {
         },
       },
       {
+        /**
+         * `UNKNOWN` is "Meta has no data yet", not "Meta lowered the rating" —
+         * and it is what every number reports until it has sent enough traffic
+         * to be graded. Failing the row on it greeted every new connection
+         * with "cut marketing sends and review the templates", which is advice
+         * about a problem that does not exist, on a number that has never sent
+         * anything. Same reasoning as the `webhook` row above: silence from a
+         * new number is not a fault.
+         *
+         * YELLOW and RED still fail. Those are gradings.
+         */
         key: 'quality',
-        ok: account.qualityRating === QUALITY.GREEN,
+        ok:
+          account.qualityRating === QUALITY.GREEN ||
+          account.qualityRating === QUALITY.UNKNOWN ||
+          account.qualityRating === null ||
+          account.qualityRating === undefined,
         detail: { accountId: account.id, qualityRating: account.qualityRating ?? null },
       },
       {
@@ -327,16 +374,76 @@ const diagnostics = async () => {
       ok: failedOutbound.length === 0,
       detail: { count: failedOutbound.length },
     },
+    /**
+     * The one row that would have turned issue #1's install into a five-minute
+     * fix. Everything else can be green — app installed, functions registered,
+     * token valid — while the `POST` half of the webhook does not exist,
+     * because an unclaimed registration leaves a server route with no workspace
+     * to run in. Meta reports a delivery failure with no detail, and nothing on
+     * this page disagreed with it.
+     */
+    await (async () => {
+      const probe =
+        base === ''
+          ? { ok: false, state: 'unreachable' as const, status: null, signed: false }
+          : await probeWebhookRoute({ baseUrl: base });
+
+      return {
+        key: 'webhookRoute',
+        ok: probe.ok,
+        detail: { state: probe.state, status: probe.status, signed: probe.signed },
+      };
+    })(),
+    /**
+     * Workspace-wide, not per-account: the wording and the keyword lists are
+     * application variables, so the drift is the same for every number. It
+     * belongs in the health panel because nothing else can catch it — a
+     * confirmation naming a dead keyword sends perfectly, and the failure is
+     * on the customer's side, in a reply the app then does not act on.
+     */
+    (() => {
+      const drift = consentWordingDrift(
+        {
+          optOutConfirmation:
+            config.confirmationLocale() === 'en'
+              ? config.optOutConfirmationEn()
+              : config.optOutConfirmationPt(),
+          optInConfirmation:
+            config.confirmationLocale() === 'en'
+              ? config.optInConfirmationEn()
+              : config.optInConfirmationPt(),
+        },
+        { optOut: config.optOutKeywords(), optIn: config.optInKeywords() },
+      );
+
+      return {
+        key: 'consentWording',
+        ok: drift.length === 0,
+        detail: {
+          count: drift.length,
+          words: drift.map((entry) => entry.word),
+          expectedIn: drift.map((entry) => entry.expectedIn),
+        },
+      };
+    })(),
   );
 
   return {
     accounts,
     rows,
     webhook: {
-      /** The alias to paste into Meta. */
-      callbackUrl: base === '' ? null : `${base}/s/whatsapp/webhook`,
-      /** The direct form, for when the alias is not configured. */
+      /**
+       * The URL to paste into Meta is `directUrl`: the resolver declares both
+       * HTTP methods (D-1), so one URL answers the GET handshake and the POST
+       * deliveries with no proxy rule at all.
+       */
       directUrl: base === '' ? null : `${base}/webhooks/server/${LF_WEBHOOK_RESOLVER}`,
+      /**
+       * The legacy fallback for a Twenty that does not route GET to server
+       * routes: a method-splitting alias an operator configures in their own
+       * reverse proxy, GET → `verifyUrl`, POST → `directUrl`.
+       */
+      callbackUrl: base === '' ? null : `${base}/whatsapp/webhook`,
       verifyUrl: base === '' ? null : `${base}/s/whatsapp/verify`,
       verifyTokenConfigured: (process.env.META_VERIFY_TOKEN ?? '').length > 0,
       requiredFields: [...REQUIRED_WEBHOOK_FIELDS],
@@ -384,6 +491,57 @@ const countOtherAccountsOnWaba = async (
   ).length;
 };
 
+/**
+ * Why this number cannot receive webhooks, or `null` when nothing is wrong.
+ *
+ * Two fields decide it, and **neither is visible in anything else the panel
+ * shows**. A number can answer `GET /{phone_number_id}` with a verified name,
+ * a GREEN quality rating and a messaging tier while being unable to produce a
+ * single event — every one of those fields is populated in the broken state.
+ * So the account went CONNECTED, the panel went green, messages arrived on the
+ * phone with two ticks, and no webhook ever fired.
+ *
+ * - `platform_type` must be `CLOUD_API`. Otherwise the number is in the WABA
+ *   but not on the API this app speaks to.
+ * - `code_verification_status` must be `VERIFIED`. `EXPIRED` is the one found
+ *   on a live install: Meta keeps delivering messages to the number and stops
+ *   emitting events for it, which is indistinguishable from a broken webhook
+ *   from every angle except this field.
+ *
+ * Reported, not thrown. The connection *is* real and the token *does* work —
+ * what is missing is a registration step at Meta, and saying which one beats a
+ * failure that reads like a bad credential.
+ */
+export const registrationFault = (number: {
+  platformType?: string | null;
+  codeVerificationStatus?: string | null;
+}): string | null => {
+  const platform = (number.platformType ?? '').toUpperCase();
+  const verification = (number.codeVerificationStatus ?? '').toUpperCase();
+
+  if (platform !== '' && platform !== 'CLOUD_API') {
+    return `platform_type is ${platform} — this number is not on the Cloud API, so no webhooks will arrive for it.`;
+  }
+
+  /**
+   * Worth surfacing, deliberately *not* worth asserting a cause for.
+   *
+   * Meta's own dashboard can show the number connected with high quality while
+   * this field reads `EXPIRED`, so a stale value here does not prove the
+   * number is broken — it may be a leftover of the verification-code flow on a
+   * number that registered successfully. What is certain is that nothing else
+   * in the product reveals it, and that a number missing webhook events with
+   * this field non-`VERIFIED` is worth re-verifying before hunting elsewhere.
+   *
+   * The wording says what the field is, not what it must mean.
+   */
+  if (verification !== '' && verification !== 'VERIFIED') {
+    return `code_verification_status is ${verification} rather than VERIFIED. Meta may still show this number as connected, and it does not on its own prove a fault — but if webhook events are not arriving, re-verifying the number in Meta (request a code, confirm it, then register it with its PIN) is worth ruling out first.`;
+  }
+
+  return null;
+};
+
 /** A live `GET /{phone_number_id}`, which is the only real proof of a connection. */
 const probeNumber = async (
   accountId: string,
@@ -394,7 +552,7 @@ const probeNumber = async (
 
     await patchAccount(accountId, {
       status: ACCOUNT_STATUS.CONNECTED,
-      statusDetail: null,
+      statusDetail: registrationFault(number),
       displayPhoneNumber: number.displayPhoneNumber,
       displayName: number.verifiedName,
       qualityRating: QUALITY_FROM_META[(number.qualityRating ?? '').toUpperCase()] ?? QUALITY.UNKNOWN,
@@ -528,6 +686,18 @@ export const handler = async (
         }
 
         /**
+         * Refuse at the door rather than store and regret. A bad calling code
+         * does nothing visible at connect time — it surfaces weeks later as
+         * sends failing for contacts stored without a country code, which is
+         * about as far from the cause as a symptom gets.
+         */
+        const callingCode = readCallingCode(body);
+
+        if (callingCode.ok === false) {
+          return new Response({ error: callingCode.error }, { status: 400 });
+        }
+
+        /**
          * Deliberately *not* `event.userWorkspaceId`, which is the membership
          * id. The resolver dispatches on the value stored here, so a membership
          * id would route every delivery to nowhere — and both are UUIDs, so
@@ -584,9 +754,9 @@ export const handler = async (
                       phoneNumberId,
                       wabaId,
                       status: ACCOUNT_STATUS.PENDING,
-                      ...(body.defaultCountryCallingCode === undefined
+                      ...(callingCode.value === undefined
                         ? {}
-                        : { defaultCountryCallingCode: body.defaultCountryCallingCode }),
+                        : { defaultCountryCallingCode: callingCode.value }),
                       ...(body.isTestAccount === undefined
                         ? {}
                         : { isTestAccount: body.isTestAccount }),
@@ -697,6 +867,61 @@ export const handler = async (
           },
           { status: probe.ok ? 200 : 502 },
         );
+      }
+
+      /**
+       * The settings-only fields of a number already connected.
+       *
+       * It exists because `defaultCountryCallingCode` was writable exactly
+       * once, in the connect form, and wrong values had to be repaired through
+       * Twenty's GraphQL API — an escape hatch no operator should need for a
+       * field the app itself put in front of them. Deliberately narrow: the
+       * routing identity (`phoneNumberId`, `wabaId`) is *not* editable here,
+       * because changing it has to move the SERVER-scoped claims with it, and
+       * that is what `connect` is for.
+       */
+      case 'updateAccount': {
+        const account =
+          body.accountId === undefined ? null : await findAccountById(body.accountId);
+
+        if (account === null) {
+          return new Response({ error: 'Unknown account' }, { status: 404 });
+        }
+
+        const callingCode = readCallingCode(body);
+
+        if (callingCode.ok === false) {
+          return new Response({ error: callingCode.error }, { status: 400 });
+        }
+
+        const patch = {
+          ...(body.name === undefined ? {} : { name: body.name }),
+          ...(callingCode.value === undefined
+            ? {}
+            : { defaultCountryCallingCode: callingCode.value }),
+          ...(body.isTestAccount === undefined ? {} : { isTestAccount: body.isTestAccount }),
+          ...(body.contactAutoCreationEnabled === undefined
+            ? {}
+            : { contactAutoCreationEnabled: body.contactAutoCreationEnabled }),
+          ...(body.sendThrottlePerSecond === undefined
+            ? {}
+            : { sendThrottlePerSecond: body.sendThrottlePerSecond }),
+        };
+
+        if (Object.keys(patch).length === 0) {
+          return new Response({ error: 'Nothing to update' }, { status: 400 });
+        }
+
+        await patchAccount(account.id, patch);
+
+        audit({
+          action: AUDIT_ACTION.ACCOUNT_SETTINGS,
+          actorId: caller.workspaceMemberId,
+          subject: { accountId: account.id },
+          details: { fields: Object.keys(patch) },
+        });
+
+        return new Response({ accountId: account.id, updated: Object.keys(patch) }, { status: 200 });
       }
 
       case 'test': {
@@ -818,4 +1043,3 @@ export const handler = async (
     return new Response({ error: 'Internal error' }, { status: 500 });
   }
 };
-

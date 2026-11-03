@@ -11,6 +11,8 @@
  * to a documented default rather than producing `NaN` two layers downstream.
  */
 
+import { DEFAULT_TIME_ZONE, resolveTimeZone } from '../domain/time-zone';
+
 const raw = (name: string): string | undefined => {
   const value = process.env[name];
 
@@ -70,6 +72,7 @@ export const listVar = (name: string, fallback: string[]): string[] => {
  */
 export const DEFAULTS = {
   defaultCountryCallingCode: '+244',
+  timeZone: DEFAULT_TIME_ZONE,
   sendThrottlePerSecond: 20,
   interactiveLaneShare: 0.4,
   recipientMinSpacingMs: 250,
@@ -89,6 +92,22 @@ export const DEFAULTS = {
   webhookStalenessHours: 24,
   autoCloseDays: 0,
   confirmationLocale: 'pt',
+  /**
+   * The word is spelled out, and `{optOutKeyword}` / `{optInKeyword}` are
+   * available instead — but are deliberately **not** the default.
+   *
+   * A placeholder resolves to the head of the keyword list, and the lists are
+   * one flat set per direction with no language tag: `optInKeywords` leads
+   * with `START`, so `{optInKeyword}` inside the *Portuguese* confirmation
+   * would tell a Portuguese speaker to reply `START`. Correct, matchable, and
+   * plainly not what the sentence around it is written in.
+   *
+   * So the defaults stay literal and locale-consistent, and the drift between
+   * these words and the keyword lists is caught by `consentWordingDrift` in
+   * the health panel rather than designed away. Installs that keep one
+   * language per instance can switch to the placeholders and lose the drift
+   * risk entirely.
+   */
   optOutConfirmationPt:
     'Não voltará a receber mensagens nossas. Para voltar a receber, responda INICIAR.',
   optOutConfirmationEn: 'You will not receive further messages from us. Reply START to resume.',
@@ -145,6 +164,14 @@ export const config = {
     Math.max(7, intVar('WA_RETENTION_WEBHOOK_EVENT_DAYS', DEFAULTS.retentionWebhookEventDays)),
   retentionMessageMonths: () =>
     intVar('WA_RETENTION_MESSAGE_MONTHS', DEFAULTS.retentionMessageMonths),
+  /**
+   * The zone every rendered date and every day boundary uses.
+   *
+   * Validated through the domain rule rather than passed straight to `Intl`: a
+   * typo here is not a wrong hour but a `RangeError` on every format, and this
+   * value reaches the recipient's message through `now.date`.
+   */
+  timeZone: () => resolveTimeZone(stringVar('WA_TIME_ZONE', DEFAULTS.timeZone)),
   timelineMode: () => stringVar('WA_TIMELINE_MODE', DEFAULTS.timelineMode).toUpperCase(),
   /**
    * Off by default, and that is a product decision rather than caution: a read
@@ -199,3 +226,25 @@ export const config = {
  */
 export const forAccount = <T>(accountValue: T | null | undefined, fallback: () => T): T =>
   accountValue === null || accountValue === undefined ? fallback() : accountValue;
+
+/**
+ * A country calling code, or `null` if the input is not one.
+ *
+ * This field is a free-text input sitting directly under `phone_number_id` and
+ * `WABA id` in the connect form, and operators pasted their **whole display
+ * number** into it. Nothing caught it: the value went to the record verbatim,
+ * and the only reader is `normalisePhone`, which then prefixes every
+ * nationally-formatted contact with a full phone number and produces a
+ * recipient that does not exist. The send fails at Meta, far from the cause.
+ *
+ * E.164 country calling codes are 1–3 digits, so the length bound is what
+ * separates `+244` from `+244923456789` — the entire bug. A leading `+` is
+ * optional on input and always present on output, because `forAccount` hands
+ * this straight to the normaliser and half the callers would otherwise have to
+ * remember to add it.
+ */
+export const parseCountryCallingCode = (value: string): string | null => {
+  const digits = value.trim().replace(/^\+/, '');
+
+  return /^[1-9]\d{0,2}$/.test(digits) ? `+${digits}` : null;
+};

@@ -162,12 +162,20 @@ describe('post-install', () => {
     expect(kvStore.get(WABA_KEY)).toBeUndefined();
   });
 
-  it('publishes the callback URL an operator has to paste into Meta', async () => {
+  /**
+   * The `/s/` prefix is the assertion, not an incidental part of the string.
+   * It is the app's own HTTP-route namespace, and no logic function declares
+   * `/whatsapp/webhook` in it — so the URL this once published was a 404 that
+   * every operator was told to paste into Meta. The callback is the
+   * reverse-proxy alias (D-1), which lives at the domain root.
+   */
+  it('publishes the proxy-alias callback URL, not a non-existent app route', async () => {
     process.env.TWENTY_API_URL = 'https://crm.example.com/';
 
     const result = await install({ newVersion: '0.1.0' });
 
-    expect(result.callbackUrl).toBe('https://crm.example.com/s/whatsapp/webhook');
+    expect(result.callbackUrl).toBe('https://crm.example.com/whatsapp/webhook');
+    expect(result.callbackUrl).not.toContain('/s/');
   });
 
   /** It must never invent an account: an account claims a real phone number. */

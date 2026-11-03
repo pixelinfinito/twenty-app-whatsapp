@@ -184,6 +184,18 @@ export type AccountPatch = {
   interactiveCursorAt?: string | null;
   campaignCursorAt?: string | null;
   lastAssignedIndex?: number;
+  /**
+   * Operator-editable settings (the `updateAccount` admin action). Separate
+   * from the fields above, which are all written by the app's own machinery —
+   * these are the ones a human sets and, having set one wrong, needs to fix
+   * without reaching for the GraphQL API.
+   */
+  name?: string;
+  /** Validated by `parseCountryCallingCode` before it reaches here. */
+  defaultCountryCallingCode?: string | null;
+  isTestAccount?: boolean;
+  contactAutoCreationEnabled?: boolean;
+  sendThrottlePerSecond?: number;
 };
 
 export const patchAccount = async (id: string, data: AccountPatch): Promise<void> => {

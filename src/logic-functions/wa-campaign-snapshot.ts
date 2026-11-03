@@ -183,6 +183,7 @@ export const decidePage = ({
           defaultCountryCallingCode: defaultCallingCode,
         },
         now,
+        timeZone: config.timeZone(),
       },
     });
 

@@ -72,6 +72,7 @@ const declaredValues = ((): Map<string, string> => {
  */
 const PAIRS: [keyof typeof DEFAULTS, string][] = [
   ['defaultCountryCallingCode', 'WA_DEFAULT_COUNTRY_CALLING_CODE'],
+  ['timeZone', 'WA_TIME_ZONE'],
   ['sendThrottlePerSecond', 'WA_SEND_THROTTLE_PER_SECOND'],
   ['interactiveLaneShare', 'WA_INTERACTIVE_LANE_SHARE'],
   ['recipientMinSpacingMs', 'WA_RECIPIENT_MIN_SPACING_MS'],

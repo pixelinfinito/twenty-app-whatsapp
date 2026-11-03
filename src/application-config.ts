@@ -95,7 +95,8 @@ export default defineApplication({
     },
     WA_DEFAULT_COUNTRY_CALLING_CODE: {
       universalIdentifier: '0b8dbe0c-2f2e-4a35-8b64-3c6d0d21f4a7',
-      description: 'Applied when normalising nationally-formatted numbers (FR-CID-1).',
+      description:
+        'The country calling code only — 1 to 3 digits, e.g. +244 — applied as a prefix when normalising nationally-formatted numbers (FR-CID-1). A full phone number here breaks every send to a contact stored without a country code.',
       value: '+244',
       type: FieldType.TEXT,
     },
@@ -140,7 +141,7 @@ export default defineApplication({
     WA_OPT_OUT_KEYWORDS: {
       universalIdentifier: '1d7e3a9c-4f82-4b56-9c1e-8a5d2f7b3e60',
       description:
-        'Exact-token matches (accent- and case-insensitive) that opt a contact out and trigger one confirmation (FR-CON-3).',
+        'Exact-token matches (accent- and case-insensitive) that opt a contact out and trigger one confirmation (FR-CON-3). Removing a word here that WA_OPT_IN_CONFIRMATION_* still tells customers to reply leaves a consent path that fails silently; the health panel flags it.',
       value: ['STOP', 'SAIR', 'PARAR', 'CANCELAR'],
       type: FieldType.ARRAY,
     },
@@ -238,6 +239,13 @@ export default defineApplication({
       value: '0.0040',
       type: FieldType.NUMBER,
     },
+    WA_TIME_ZONE: {
+      universalIdentifier: '7a1e20e5-4c17-4b3d-9f21-0e6b2c8d5417',
+      description:
+        'IANA time zone for every rendered date and every day boundary: chat and thread timestamps, the day separators, the {{now.*}} campaign variables, and the "created today" audience filter. Deliberately not the reader\u2019s browser \u2014 a rep must see the customer\u2019s day, or a message sent at 23:30 files itself under tomorrow. An unrecognised name falls back to the default rather than failing to render.',
+      value: 'Africa/Luanda',
+      type: FieldType.TEXT,
+    },
     WA_CONFIRMATION_LOCALE: {
       universalIdentifier: 'ccab3fbb-40a7-4042-bbfb-f4df1f135588',
       description:
@@ -252,7 +260,7 @@ export default defineApplication({
     WA_OPT_OUT_CONFIRMATION_PT: {
       universalIdentifier: '6ee7ee18-74ad-4843-bab6-1b66f5eded6f',
       description:
-        'The single reply sent when a contact opts out in Portuguese. Wording is configurable because counsel reviews it (Q-4) and a legal review must never require a deploy; whatever was sent is stored on the consent event as evidence.',
+        'The single reply sent when a contact opts out in Portuguese. Wording is configurable because counsel reviews it (Q-4) and a legal review must never require a deploy; whatever was sent is stored on the consent event as evidence. Any keyword you name here must still be in WA_OPT_IN_KEYWORDS, or you are telling customers to reply a word that no longer works — write {optInKeyword} instead and it always follows the list. The health panel flags the mismatch.',
       value: 'Não voltará a receber mensagens nossas. Para voltar a receber, responda INICIAR.',
       type: FieldType.TEXT,
     },
@@ -264,7 +272,8 @@ export default defineApplication({
     },
     WA_OPT_IN_CONFIRMATION_PT: {
       universalIdentifier: '90115df8-3b79-46a5-8bf2-ad2a92197f8a',
-      description: 'The single reply sent when a contact opts back in, in Portuguese.',
+      description:
+        'The single reply sent when a contact opts back in, in Portuguese. Any keyword you name here must still be in WA_OPT_OUT_KEYWORDS, or you are telling customers to reply a word that no longer works — write {optOutKeyword} instead and it always follows the list. The health panel flags the mismatch.',
       value: 'Obrigado! Voltará a receber as nossas mensagens. Para parar, responda SAIR.',
       type: FieldType.TEXT,
     },

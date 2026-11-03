@@ -180,7 +180,13 @@ const call = async (
     isBase64Encoded: false,
     requestContext: { http: { method: 'GET', path: '/whatsapp/feed' } },
     userWorkspaceId: 'uw-1',
-  } as never)) as unknown as { status?: number; body: Envelope };
+  } as never, {
+    workspaceId: 'ws-1',
+    userWorkspaceId: 'uw-1',
+    workspaceMemberId: 'wm-1',
+    retryCount: 0,
+    maxRetries: 0,
+  })) as unknown as { status?: number; body: Envelope };
 
   return { status: response.status ?? 200, body: response.body };
 };

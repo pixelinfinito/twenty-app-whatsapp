@@ -65,7 +65,7 @@ export type InboundResult = {
 };
 
 /** Consent keywords are matched exactly, after folding case and accents. */
-const foldForKeyword = (value: string): string =>
+export const foldForKeyword = (value: string): string =>
   value
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')

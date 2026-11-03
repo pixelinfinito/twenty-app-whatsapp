@@ -1,6 +1,10 @@
 import { createCloudApiProvider } from './cloud-api.provider';
-import { requireSecret } from './config';
-import { verifyMetaSignature, verifyMetaVerifyToken } from './verify-signature';
+import { optionalSecret, requireSecret } from './config';
+import {
+  computeMetaSignature,
+  verifyMetaSignature,
+  verifyMetaVerifyToken,
+} from './verify-signature';
 import type { WhatsAppProvider } from './types';
 
 /**
@@ -85,6 +89,26 @@ export const verifyIncomingSignature = ({
 
 export const verifyIncomingToken = (provided: string | undefined): boolean =>
   verifyMetaVerifyToken(provided, requireSecret('META_VERIFY_TOKEN'));
+
+/**
+ * Signs a body the way Meta would, for the health panel's route probe.
+ *
+ * `optionalSecret`, not `requireSecret`: an install that has not set the app
+ * secret yet still deserves to learn whether its webhook route exists, and
+ * throwing here would turn a diagnostic into the outage it was meant to
+ * report. `null` means "could not sign", and the probe degrades to asking only
+ * whether the route is registered.
+ *
+ * The third wrapper, for the same reason as the two above: the health check
+ * must not name `META_APP_SECRET`.
+ */
+export const signOutgoingProbe = (rawBody: string): string | null => {
+  const secret = optionalSecret('META_APP_SECRET');
+
+  return secret === null || secret.length === 0
+    ? null
+    : computeMetaSignature(rawBody, secret);
+};
 
 export * from './types';
 export * from './errors';

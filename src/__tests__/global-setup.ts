@@ -7,7 +7,7 @@ import { APPLICATION_UNIVERSAL_IDENTIFIER } from '../constants/universal-identif
 
 const APP_PATH = process.cwd();
 const run = promisify(execFile);
-const cli = (...args: string[]) => run(process.execPath, [path.join(APP_PATH, 'node_modules/twenty/dist/cli.cjs'), ...args, '--no-input', '--json'], { env: process.env, maxBuffer: 10 * 1024 * 1024 });
+const cli = (...args: string[]) => run(process.execPath, [path.join(APP_PATH, 'node_modules/twenty/dist/cli.cjs'), ...args, ...(process.env.WA_TEST_REMOTE ? ['--remote', process.env.WA_TEST_REMOTE] : []), '--no-input', '--json'], { env: process.env, maxBuffer: 10 * 1024 * 1024 });
 
 function validateEnv(): { apiUrl: string; apiKey: string } {
   const apiUrl = process.env.TWENTY_API_URL;
@@ -156,8 +156,10 @@ export async function setup() {
   await checkServer(apiUrl);
   await assertWorkspaceIsDisposable(apiUrl, apiKey);
 
-  await cli('app', 'apply', '--create');
-  installedBySuite = true;
+  if (process.env.WA_TEST_USE_INSTALLED_APP !== 'true') {
+    await cli('app', 'apply', '--create', '--no-prune');
+    installedBySuite = true;
+  }
 
   await enableApiKeyRoutes(apiUrl, apiKey);
 }

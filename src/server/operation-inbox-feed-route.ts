@@ -772,4 +772,3 @@ export const handler = async (event: RoutePayload, executionContext?: LogicFunct
     return new Response({ error: 'Internal error' }, { status: 500 });
   }
 };
-

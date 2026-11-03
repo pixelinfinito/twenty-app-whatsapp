@@ -1,4 +1,5 @@
 import { toE164 } from '../phone/normalise';
+import { resolveTimeZone } from '../time-zone';
 import {
   PARAMETER_LIMITS,
   isBlank,
@@ -39,14 +40,31 @@ export type ResolutionSubject = {
   workspaceMember?: { name?: { firstName?: string | null } | null } | null;
   account?: { displayName?: string | null; defaultCountryCallingCode?: string | null } | null;
   now: Date;
+  /**
+   * The zone `now.*` renders in. Travels with `now` because it is the other
+   * half of the same fact: an instant without a zone is not yet a date, and
+   * these three bindings put a date into a message the customer reads.
+   *
+   * Optional and defaulted so every existing caller keeps its behaviour; the
+   * callers that have configuration (`wa-campaign-snapshot`, `wa-campaign-
+   * control`) pass `config.timeZone()`.
+   */
+  timeZone?: string;
 };
 
-/** Angola has no DST, but naming the zone keeps a server in any region honest. */
-export const CAMPAIGN_TIME_ZONE = 'Africa/Luanda';
 const LOCALE = 'pt-PT';
 
-const formatNow = (now: Date, options: Intl.DateTimeFormatOptions): string =>
-  new Intl.DateTimeFormat(LOCALE, { timeZone: CAMPAIGN_TIME_ZONE, ...options }).format(now);
+/**
+ * Angola has no DST, but naming the zone keeps a server in any region honest —
+ * and now that the zone is configurable, naming it is what makes a campaign
+ * sent from Mexico render Mexico's date rather than Angola's in the recipient's
+ * own message.
+ */
+const formatNow = (subject: ResolutionSubject, options: Intl.DateTimeFormatOptions): string =>
+  new Intl.DateTimeFormat(LOCALE, {
+    timeZone: resolveTimeZone(subject.timeZone),
+    ...options,
+  }).format(subject.now);
 
 const linkUrl = (value: { primaryLinkUrl?: string | null } | string | null | undefined): string | null => {
   if (typeof value === 'string') return value;
@@ -86,9 +104,9 @@ const RESOLVERS: Record<string, Resolver> = {
   'person.linkedinLink.primaryLinkUrl': (s) => linkUrl(s.person?.linkedinLink),
   'workspaceMember.name.firstName': (s) => s.workspaceMember?.name?.firstName ?? null,
   'account.displayName': (s) => s.account?.displayName ?? null,
-  'now.date': (s) => formatNow(s.now, { day: '2-digit', month: '2-digit', year: 'numeric' }),
-  'now.month': (s) => formatNow(s.now, { month: 'long' }),
-  'now.year': (s) => formatNow(s.now, { year: 'numeric' }),
+  'now.date': (s) => formatNow(s, { day: '2-digit', month: '2-digit', year: 'numeric' }),
+  'now.month': (s) => formatNow(s, { month: 'long' }),
+  'now.year': (s) => formatNow(s, { year: 'numeric' }),
 };
 
 export const ALLOWED_BINDING_PATHS = Object.keys(RESOLVERS);

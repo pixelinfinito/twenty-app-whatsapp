@@ -61,12 +61,31 @@ type Diagnostics = {
  */
 const HEALTH_KEYS = [
   'token',
+  'webhookRoute',
   'webhook',
   'quality',
   'tier',
   'failedWebhookEvents',
   'stuckOutbound',
   'failedOutbound',
+  'consentWording',
+] as const;
+
+/**
+ * The callback setup steps, in the only order that works.
+ *
+ * A list rather than seven inline `t(...)` calls so the order lives in one
+ * place and the copy catalog stays the only place the wording lives.
+ */
+const CALLBACK_STEPS = [
+  'settings.callbackStep1',
+  'settings.callbackStep2',
+  'settings.callbackStep3',
+  'settings.callbackStep4',
+  'settings.callbackStep5',
+  'settings.callbackStep6',
+  'settings.callbackStep7',
+  'settings.callbackStep8',
 ] as const;
 
 /**
@@ -91,6 +110,17 @@ export const isLocalCallback = (url: string | null): boolean => {
     host.endsWith('.local') ||
     host.endsWith('.localhost')
   );
+};
+
+/** The path of an absolute URL the server printed, for the local-tunnel note. */
+export const pathOf = (url: string | null): string => {
+  if (url === null) return '';
+
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
+  }
 };
 
 const Copyable = ({
@@ -197,6 +227,17 @@ export const SettingsView = () => {
     isTestAccount: false,
     subscribeApp: true,
   });
+
+  /**
+   * In-flight edits to a connected number's calling code, keyed by account id.
+   *
+   * Kept out of `form`, which belongs to the *connect* card: an operator fixing
+   * a wrong code on a live number is not half-way through connecting a new one,
+   * and sharing the state would let one card's Save read the other's input. A
+   * missing key means "not being edited", so the input falls back to the stored
+   * value and a reload after Save is visible rather than overwritten.
+   */
+  const [callingCodeEdits, setCallingCodeEdits] = useState<Record<string, string>>({});
 
   const account = data?.accounts[0] ?? null;
   const now = new Date();
@@ -492,6 +533,16 @@ export const SettingsView = () => {
                 })}
                 {connected.isTestAccount === true ? ` · ${t('chat.testAccount')}` : ''}
               </div>
+              {/*
+                `statusDetail` is where the probe puts the sentence explaining a
+                status, and until now nothing rendered it — so the one field
+                written to say *why* a number is in the state it is in went
+                straight to the database and stopped there. It is how a number
+                that is connected but not registered for Cloud API says so.
+              */}
+              {typeof connected.statusDetail === 'string' && connected.statusDetail !== '' ? (
+                <Banner tone="danger">{connected.statusDetail}</Banner>
+              ) : null}
               <Copyable
                 label="phone_number_id"
                 value={connected.phoneNumberId ?? null}
@@ -502,6 +553,60 @@ export const SettingsView = () => {
                 value={connected.wabaId ?? null}
                 copyLabel={t('common.copy')}
               />
+
+              {/*
+                Editable here, and not only in the connect form. The value is
+                the prefix put in front of every nationally-formatted contact
+                number, so a wrong one breaks sends to exactly the contacts it
+                was meant to rescue — and until this field existed the only
+                repair was Twenty's GraphQL API.
+              */}
+              <Field label={t('settings.callingCode')} hint={t('settings.callingCodeHint')}>
+                <div style={{ display: 'flex', gap: theme.spacing[2], alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={
+                      callingCodeEdits[connected.id] ??
+                      (connected.defaultCountryCallingCode ?? '')
+                    }
+                    placeholder={t('settings.callingCodeInherited')}
+                    onChange={(event) =>
+                      setCallingCodeEdits({
+                        ...callingCodeEdits,
+                        [connected.id]: event.target.value,
+                      })
+                    }
+                    style={input}
+                  />
+                  <AdminAction
+                    label={t('common.save')}
+                    busy={busy}
+                    disabled={callingCodeEdits[connected.id] === undefined}
+                    onClick={async () => {
+                      const saved = await post('/s/whatsapp/account', {
+                        action: 'updateAccount',
+                        accountId: connected.id,
+                        defaultCountryCallingCode: callingCodeEdits[connected.id],
+                      });
+
+                      if (saved === null) return;
+
+                      // Dropping the key hands the input back to the stored
+                      // value, so the operator sees what the server kept —
+                      // `+244` from `244` — rather than what they typed.
+                      setCallingCodeEdits(
+                        Object.fromEntries(
+                          Object.entries(callingCodeEdits).filter(
+                            ([id]) => id !== connected.id,
+                          ),
+                        ),
+                      );
+                      setNotice(t('settings.saved'));
+                      void load();
+                    }}
+                  />
+                </div>
+              </Field>
 
               <div style={{ display: 'flex', gap: theme.spacing[2], flexWrap: 'wrap' }}>
                 <AdminAction
@@ -625,7 +730,7 @@ export const SettingsView = () => {
                 style={input}
               />
             </Field>
-            <Field label={t('settings.callingCode')}>
+            <Field label={t('settings.callingCode')} hint={t('settings.callingCodeHint')}>
               <input
                 type="text"
                 value={form.defaultCountryCallingCode}
@@ -669,26 +774,77 @@ export const SettingsView = () => {
 
           <Card title={t('settings.callback')}>
             {/*
+              First, because it is the step that decides which URL to paste.
+              The direct form is the callback Meta asks for — one URL answering
+              both the GET handshake and the POST deliveries; the two below it
+              are the legacy alternatives for a Twenty that does not route GET
+              to server routes.
+            */}
+            <Banner>{t('settings.callbackDirectNote')}</Banner>
+            {/*
+              The seven steps, in the order they must happen.
+
+              Three of them (claim, LOGIC_FUNCTION_TYPE, the META_* variables)
+              produce a webhook that is configured perfectly in Meta and still
+              delivers nothing, each with its own status code and none of them
+              guessable. They are numbered rather than prose because the order
+              is load-bearing: the proxy alias cannot be tested before the
+              route exists, and the route does not exist before the claim.
+
+              Rendered as a real <ol> so screen readers announce the count and
+              position — "step 3 of 7" is the part that tells someone how much
+              is left.
+            */}
+            <details>
+              <summary
+                style={{
+                  cursor: 'pointer',
+                  fontSize: theme.font.size.md,
+                  fontWeight: theme.font.weight.semiBold,
+                  color: theme.font.color.primary,
+                }}
+              >
+                {t('settings.callbackSteps')}
+              </summary>
+              <ol
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: theme.spacing[2],
+                  margin: `${theme.spacing[2]} 0 0`,
+                  padding: 0,
+                  listStyle: 'none',
+                  fontSize: theme.font.size.md,
+                  color: theme.font.color.secondary,
+                  lineHeight: 1.5,
+                }}
+              >
+                {CALLBACK_STEPS.map((key) => (
+                  <li key={key}>{t(key)}</li>
+                ))}
+              </ol>
+            </details>
+            {/*
               On local development these URLs answer only on this machine.
               Saying so beside them is the difference between an operator
               pasting a tunnel URL into Meta and pasting `localhost` — which
               fails without an error anywhere they can see.
             */}
-            {isLocalCallback(data?.webhook.callbackUrl ?? null) ? (
+            {isLocalCallback(data?.webhook.directUrl ?? null) ? (
               <Banner>
                 {t('settings.callbackLocalNote', {
-                  path: '/s/whatsapp/webhook',
+                  path: pathOf(data?.webhook.directUrl ?? null),
                 })}
               </Banner>
             ) : null}
             <Copyable
-              label={t('settings.callbackUrl')}
-              value={data?.webhook.callbackUrl ?? null}
+              label={t('settings.directUrl')}
+              value={data?.webhook.directUrl ?? null}
               copyLabel={t('common.copy')}
             />
             <Copyable
-              label={t('settings.directUrl')}
-              value={data?.webhook.directUrl ?? null}
+              label={t('settings.callbackUrl')}
+              value={data?.webhook.callbackUrl ?? null}
               copyLabel={t('common.copy')}
             />
             <Copyable

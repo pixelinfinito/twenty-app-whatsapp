@@ -34,6 +34,8 @@ export const coreClient = (): CoreApiClient => {
 
 export const metadataClient = (): MetadataApiClient => (metadata ??= new MetadataApiClient({ runAs: 'application' }));
 
+export const applicationMetadataClient = metadataClient;
+
 /** Test seam. Also the correct response to a token rotation mid-process. */
 export const resetClients = (): void => {
   core = null;

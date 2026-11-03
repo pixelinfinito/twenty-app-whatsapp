@@ -8,7 +8,7 @@ import {
   SOURCE_KIND,
   type ConsentStatus,
 } from '../domain/constants';
-import { config } from '../server/config';
+import { DEFAULTS, config } from '../server/config';
 import { setConsent } from '../server/consent';
 import { describeError, logger } from '../server/logger';
 import { METRIC, count } from '../server/metrics';
@@ -16,7 +16,7 @@ import { queueOutbound } from '../server/outbound';
 import { findAccountById } from '../server/repositories/accounts';
 import { findMessageById } from '../server/repositories/messages';
 import { findThreadById, patchThread } from '../server/repositories/threads';
-import { matchesKeyword } from './wa-inbound-processor';
+import { foldForKeyword, matchesKeyword } from './wa-inbound-processor';
 
 /**
  * STOP and START (FR-CON-3, specs/06 §10).
@@ -84,16 +84,119 @@ export const consentIntent = (
  * to come from a Portuguese speaker as an English one, and guessing wrong sends
  * a compliance message in a language the recipient may not read.
  */
+/**
+ * `{optOutKeyword}` / `{optInKeyword}` resolved against the live lists.
+ *
+ * Opt-in wording: a confirmation written with these cannot drift out of step
+ * with the keyword lists, because it *is* the keyword list. The cost is that
+ * the head of the list wins — `['STOP', 'SAIR', …]` always yields `STOP` — and
+ * the lists carry no language tag, so this suits an instance running one
+ * language and not one advertising a different word per locale. That is why
+ * the shipped defaults spell the word out (see `DEFAULTS`).
+ *
+ * An empty list falls back to the shipped default rather than interpolating
+ * nothing: "Para parar, responda ." is worse than naming a word, and a list
+ * emptied by accident is exactly when the confirmation still needs to say
+ * something a human can act on.
+ */
+export const resolveConfirmationKeywords = (
+  text: string,
+  { optOut, optIn }: { optOut: string[]; optIn: string[] },
+): string =>
+  text
+    .replace(/\{optOutKeyword\}/g, optOut[0] ?? DEFAULTS.optOutKeywords[0])
+    .replace(/\{optInKeyword\}/g, optIn[0] ?? DEFAULTS.optInKeywords[0]);
+
 export const confirmationText = (status: Exclude<ConsentStatus, 'UNKNOWN'>): string => {
   const locale = config.confirmationLocale();
 
-  if (status === CONSENT_STATUS.OPTED_OUT) {
-    return locale === 'en'
-      ? config.optOutConfirmationEn()
-      : config.optOutConfirmationPt();
+  const raw =
+    status === CONSENT_STATUS.OPTED_OUT
+      ? locale === 'en'
+        ? config.optOutConfirmationEn()
+        : config.optOutConfirmationPt()
+      : locale === 'en'
+        ? config.optInConfirmationEn()
+        : config.optInConfirmationPt();
+
+  return resolveConfirmationKeywords(raw, {
+    optOut: config.optOutKeywords(),
+    optIn: config.optInKeywords(),
+  });
+};
+
+/**
+ * Confirmations that name a keyword the matcher would no longer accept.
+ *
+ * Only **known consent words** are candidates — the words currently in either
+ * list, plus the shipped defaults. That is what keeps a company name or an
+ * acronym in the wording from raising a false alarm, which matters: this is a
+ * health row, and a health row that cries wolf is a health row people stop
+ * reading.
+ *
+ * Wording that uses the placeholders cannot drift and never appears here.
+ */
+export const consentWordingDrift = (
+  wording: { optOutConfirmation: string; optInConfirmation: string },
+  lists: { optOut: string[]; optIn: string[] },
+): { text: 'optOutConfirmation' | 'optInConfirmation'; word: string; expectedIn: 'optOut' | 'optIn' }[] => {
+  const fold = (value: string): string => foldForKeyword(value);
+  const known = new Set(
+    [
+      ...lists.optOut,
+      ...lists.optIn,
+      ...DEFAULTS.optOutKeywords,
+      ...DEFAULTS.optInKeywords,
+    ].map(fold),
+  );
+
+  const drift: {
+    text: 'optOutConfirmation' | 'optInConfirmation';
+    word: string;
+    expectedIn: 'optOut' | 'optIn';
+  }[] = [];
+
+  /**
+   * An opt-*out* confirmation tells the customer how to come back, so the word
+   * it names has to be an opt-*in* keyword — and vice versa. Getting this pair
+   * the wrong way round would report every correct install as broken.
+   */
+  const checks = [
+    {
+      text: 'optOutConfirmation' as const,
+      body: wording.optOutConfirmation,
+      expectedIn: 'optIn' as const,
+      accepted: new Set(lists.optIn.map(fold)),
+    },
+    {
+      text: 'optInConfirmation' as const,
+      body: wording.optInConfirmation,
+      expectedIn: 'optOut' as const,
+      accepted: new Set(lists.optOut.map(fold)),
+    },
+  ];
+
+  for (const check of checks) {
+    /**
+     * Capitalised tokens only. Every confirmation that names a keyword shouts
+     * it — `responda SAIR`, `Reply STOP` — because it is a literal the
+     * customer has to type back, and the shout is what separates the
+     * instruction from the same word used as ordinary prose ("para parar").
+     */
+    for (const token of check.body.split(/\s+/)) {
+      const bare = token.replace(/[^\p{L}\p{N}]/gu, '');
+
+      if (bare.length < 2 || bare !== bare.toUpperCase()) continue;
+
+      const folded = fold(bare);
+
+      if (!known.has(folded) || check.accepted.has(folded)) continue;
+
+      drift.push({ text: check.text, word: bare, expectedIn: check.expectedIn });
+    }
   }
 
-  return locale === 'en' ? config.optInConfirmationEn() : config.optInConfirmationPt();
+  return drift;
 };
 
 export const processConsentKeyword = async (

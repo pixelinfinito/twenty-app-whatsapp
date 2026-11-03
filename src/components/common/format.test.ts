@@ -1,15 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { TABLES, translateWith } from './copy';
-import { clockTime, countdown, dayKey, daySeparator, fileSize, money } from './format';
+import { langOf, TABLES, translateWith } from './copy';
+import { chatTimeZone, clockTime, countdown, dayKey, daySeparator, fileSize, money } from './format';
+import { TIME_ZONE_VARIABLE } from '../../domain/time-zone';
 
 const t = translateWith('pt');
+
+/**
+ * The host hands a front component its variables in a bundle; outside a host
+ * the SDK reads them from `process.env.applicationVariables` as JSON.
+ */
+const configureZone = (zone: string | undefined): void => {
+  if (zone === undefined) delete process.env.applicationVariables;
+  else process.env.applicationVariables = JSON.stringify({ [TIME_ZONE_VARIABLE]: zone });
+};
 
 /**
  * Africa/Luanda is UTC+1 with no daylight saving, so 23:30 UTC is already
  * tomorrow for the customer. Every assertion below is about that hour.
  */
 describe('day boundaries', () => {
+  afterEach(() => configureZone(undefined));
   it('files a late-evening message under the customer’s day, not UTC’s', () => {
     // 23:30Z on the 16th is 00:30 on the 17th in Luanda.
     expect(dayKey('2026-08-16T23:30:00.000Z')).toBe('2026-08-17');
@@ -28,8 +39,55 @@ describe('day boundaries', () => {
     expect(daySeparator('2026-08-16T12:00:00.000Z', now, 'pt', t)).toBe('Ontem');
   });
 
+  /**
+   * Yesterday is the previous *civil* day, not now minus 24 hours. Across a
+   * transition the subtraction lands a civil day short: at 00:30 in New York
+   * on March 9th, now minus a day is 23:30 on March 7th — the old code called
+   * *Saturday* "Yesterday" and kept Sunday's messages on a weekday label.
+   */
+  it('labels the whole of the previous civil day as yesterday across a transition', () => {
+    configureZone('America/New_York');
+
+    const now = new Date('2026-03-09T04:30:00.000Z'); // 00:30 EDT, March 9th.
+    const en = translateWith('en');
+
+    expect(daySeparator('2026-03-08T23:00:00.000Z', now, 'en', en)).toBe('Yesterday');
+    expect(daySeparator('2026-03-08T06:30:00.000Z', now, 'en', en)).toBe('Yesterday');
+    expect(daySeparator('2026-03-07T12:00:00.000Z', now, 'en', en)).toContain('Saturday');
+  });
+
   it('shows the clock in Luanda, not in the reader’s zone', () => {
     expect(clockTime('2026-08-16T23:30:00.000Z', 'pt')).toBe('00:30');
+  });
+});
+
+describe('chatTimeZone', () => {
+  afterEach(() => configureZone(undefined));
+
+  it('defaults to Luanda when nothing is configured', () => {
+    expect(chatTimeZone()).toBe('Africa/Luanda');
+  });
+
+  it('follows the configured zone', () => {
+    configureZone('America/Mexico_City');
+
+    expect(chatTimeZone()).toBe('America/Mexico_City');
+  });
+
+  it('degrades an unrecognised zone to the default rather than failing to render', () => {
+    configureZone('Not/AZone');
+
+    expect(chatTimeZone()).toBe('Africa/Luanda');
+  });
+
+  it('files a Mexican evening message under the customer’s day', () => {
+    configureZone('America/Mexico_City');
+
+    // 02:00Z on the 17th is 20:00 on the 16th in Mexico City — yesterday’s
+    // conversation, not today’s.
+    expect(
+      daySeparator('2026-08-17T02:00:00.000Z', new Date('2026-08-17T09:00:00.000Z'), 'en', translateWith('en')),
+    ).toBe('Yesterday');
   });
 });
 
@@ -98,6 +156,18 @@ describe('copy', () => {
   it('answers in the reader’s language', () => {
     expect(translateWith('pt')('policy.WINDOW_CLOSED')).toContain('janela');
     expect(translateWith('en')('policy.WINDOW_CLOSED')).toContain('window');
+    expect(translateWith('es')('policy.WINDOW_CLOSED')).toContain('ventana');
+  });
+
+  /**
+   * A Spanish locale used to fall through to English, and once `es` existed in
+   * the catalogue its *table* was still missing — `translateWith('es')` read
+   * `TABLES.es` before that table was built and threw on the first key. Both
+   * routes are pinned: the locale routes to `es`, and `es` renders.
+   */
+  it('routes an es locale to Spanish, not to English', () => {
+    expect(langOf('es-419')).toBe('es');
+    expect(translateWith('es')('chat.today')).toBe('Hoy');
   });
 
   /**
@@ -106,14 +176,18 @@ describe('copy', () => {
    * an English sentence in a Portuguese screen — or as nothing at all. Paired
    * entries make it unrepresentable; this is what proves the pairing held.
    */
-  it('has both languages for every key, and neither is blank', () => {
+  it('has every language for every key, and none is blank', () => {
     const keys = Object.keys(TABLES.pt);
 
     expect(keys.length).toBeGreaterThan(100);
     expect(Object.keys(TABLES.en)).toEqual(keys);
+    expect(Object.keys(TABLES.es)).toEqual(keys);
 
     const blank = keys.filter(
-      (key) => TABLES.pt[key]!.trim() === '' || TABLES.en[key]!.trim() === '',
+      (key) =>
+        TABLES.pt[key]!.trim() === '' ||
+        TABLES.en[key]!.trim() === '' ||
+        TABLES.es[key]!.trim() === '',
     );
 
     expect(blank).toEqual([]);
@@ -124,13 +198,14 @@ describe('copy', () => {
    * literal braces for half the users — the kind of defect that survives review
    * because the language the reviewer reads is fine.
    */
-  it('uses the same placeholders in both languages', () => {
+  it('uses the same placeholders in every language', () => {
     const placeholders = (text: string): string[] =>
       (text.match(/\{[a-zA-Z]+\}/g) ?? []).sort();
 
     const mismatched = Object.keys(TABLES.pt).filter(
       (key) =>
-        placeholders(TABLES.pt[key]!).join(',') !== placeholders(TABLES.en[key]!).join(','),
+        placeholders(TABLES.pt[key]!).join(',') !== placeholders(TABLES.en[key]!).join(',') ||
+        placeholders(TABLES.pt[key]!).join(',') !== placeholders(TABLES.es[key]!).join(','),
     );
 
     expect(mismatched).toEqual([]);

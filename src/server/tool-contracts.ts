@@ -21,7 +21,7 @@ export const TOOL_ACTIONS = {
   'whatsapp-templates': ['list', 'submit', 'publish', 'unpublish', 'sync'],
   'whatsapp-campaigns': ['list', 'get', 'audienceOptions', 'personSearch', 'create', 'update', 'build', 'preview', 'preflight', 'testSend', 'launch', 'pause', 'resume', 'cancel', 'delete', 'archive', 'unarchive'],
   'whatsapp-consent': ['set', 'history', 'import', 'erase'],
-  'whatsapp-accounts': ['list', 'connect', 'test', 'disconnect', 'syncTemplates', 'diagnostics', 'variables', 'setVariable', 'createNotificationWorkflow'],
+  'whatsapp-accounts': ['list', 'connect', 'updateAccount', 'test', 'disconnect', 'syncTemplates', 'diagnostics', 'variables', 'setVariable', 'createNotificationWorkflow'],
   'whatsapp-webhooks': ['list', 'replay', 'replayFailed', 'resyncThread'],
 } as const;
 

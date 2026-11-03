@@ -321,6 +321,8 @@ describe('templates and account', () => {
         quality_rating: 'GREEN',
         messaging_limit_tier: 'TIER_1K',
         throughput: { level: 'STANDARD' },
+        platform_type: 'CLOUD_API',
+        code_verification_status: 'VERIFIED',
       }),
     );
 
@@ -331,7 +333,48 @@ describe('templates and account', () => {
       qualityRating: 'GREEN',
       messagingLimitTier: 'TIER_1K',
       throughputLevel: 'STANDARD',
+      platformType: 'CLOUD_API',
+      codeVerificationStatus: 'VERIFIED',
     });
+  });
+
+  /**
+   * The fields that decide whether a webhook can ever fire, and the reason
+   * they are read at all.
+   *
+   * A number can sit in the WABA and answer with a name, a quality rating and
+   * a tier while not being registered for Cloud API — every field the probe
+   * used to read is populated in that state. So the account went CONNECTED,
+   * the panel went green, messages were delivered by WhatsApp with two ticks
+   * on the sender's phone, and no event ever arrived.
+   */
+  it('asks Meta for platform_type and code_verification_status', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { id: '1' }));
+
+    await provider().getPhoneNumber('1');
+
+    const url = String(fetchMock.mock.calls[0][0]);
+
+    expect(url).toContain('platform_type');
+    expect(url).toContain('code_verification_status');
+  });
+
+  it('reports a number that is in the WABA but not on Cloud API', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        id: '1',
+        display_phone_number: '244978735650',
+        verified_name: 'Pixel',
+        quality_rating: 'GREEN',
+        platform_type: 'NOT_APPLICABLE',
+      }),
+    );
+
+    const number = await provider().getPhoneNumber('1');
+
+    // Healthy-looking on every other field, which is the whole problem.
+    expect(number.qualityRating).toBe('GREEN');
+    expect(number.platformType).toBe('NOT_APPLICABLE');
   });
 
   /**

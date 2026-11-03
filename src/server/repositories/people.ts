@@ -90,7 +90,7 @@ export const findPeopleByPrimaryPhone = async (
 /**
  * The unindexed fallback over `additionalPhones` (probe P-5).
  *
- * `additionalPhones` is RAW_JSON and the schema exposes only a `like` filter on
+ * `additionalPhones` is returned as typed phone objects but exposes a `like` filter on
  * it, so this is a substring scan over serialised JSON — correct but not
  * cheap, which is why it runs only when the indexed pass found nothing. The
  * national number is matched without its calling code because the stored

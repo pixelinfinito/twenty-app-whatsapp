@@ -48,6 +48,15 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
+      # Apply first: the standalone CLI generates the typed workspace client after sync.
+      - name: Apply the app to the instance
+        run: |
+          printf '%s' "$TWENTY_API_KEY" | yarn twenty auth login --with-token --url "$TWENTY_API_URL" --name ci --use --no-input
+          yarn twenty app apply --create --no-prune --remote ci --no-input --json
+        env:
+          TWENTY_API_URL: ${{ steps.twenty.outputs.server-url }}
+          TWENTY_API_KEY: ${{ steps.twenty.outputs.api-key }}
+
       - name: Lint
         run: yarn lint
 
@@ -57,9 +66,13 @@ jobs:
       - name: Unit tests
         run: yarn test:unit
 
+      - name: Platform delegation tests
+        run: yarn test:platform
+
       - name: Run integration tests
         run: yarn test
         env:
+          WA_TEST_USE_INSTALLED_APP: 'true'
           TWENTY_API_URL: ${{ steps.twenty.outputs.server-url }}
           TWENTY_API_KEY: ${{ steps.twenty.outputs.api-key }}
 

@@ -2,22 +2,263 @@
 
 All notable changes to this application are documented in this file.
 
-## Unreleased — UI/UX review
+## 0.2.0 — 2026-11-04
 
-- Give chat a full-width expanding message box and a compact icon toolbar with keyboard-accessible tooltips; separate template selection from Send and improve Send contrast in dark mode.
-- Keep drafts, selected uploads and template parameters after refused sends; prevent duplicate submissions and accidental sends during IME composition.
-- Fit the composer and attachment actions in narrow/short widgets, account for Twenty's UI scaling, and fix clipped delivery ticks.
-- Recover from failed campaign detail/preflight/search/preview reads, preserve schedule time zones and clearing, and add explicit Save draft.
-- Scope inbox shortcuts to the list, retain the selected filter, and show conversation action failures.
-- Improve text contrast, keyboard focus, field descriptions, upload guidance and settings feedback. Campaign layouts respond immediately to pane width.
-- Add 24 UI regression tests, 5 draft-route tests and a draft-persistence integration test. See `reports/ui-ux-audit-2026-11-03.md` for findings and validation.
+### Added
 
-## Unreleased — native attachments on Twenty 2.54
+- Twelve WhatsApp tools through Twenty MCP and built-in agents, covering conversations, all current message types, templates, campaigns, consent, accounts and webhook recovery. Includes a reusable WhatsApp skill and a companion server/shared-SDK patch for trusted caller delegation.
+- Assignable operator/admin permissions, caller-scoped record/file reads, AI provenance, atomic request idempotency and ten-minute preview/confirmation tokens for bulk and destructive actions.
+- Native Twenty device uploads, previews, validation, retry, replacement and removal for messages, template/campaign media headers and voice notes. Saved drafts and queued sends retain their files.
 
-- Device files upload directly through Twenty's host API, with image previews, validation, replacement, removal and retry. Recent conversation files remain available for reuse.
-- Templates, campaign media headers and voice recordings share the same upload path. Saved campaign drafts and queued messages retain their files through FILES associations.
-- Removed the S3 browser, workspace-wide attachment search, manual URL fields and base64 upload route.
-- Require Twenty 2.54.0, with matching SDKs and standalone CLI. Route authorization now uses the platform execution context; server repositories explicitly use application access. Updated phone/actor selections for the 2.54 schema.
+### Changed
+
+- Require Twenty 2.54.0 or newer in the 2.x series, with SDKs/CLI pinned to 2.54.0. AI tools additionally require caller delegation v1; stock runtimes refuse those tools safely.
+- Improve the responsive composer, keyboard controls, focus/contrast, narrow widgets, action feedback and preservation of drafts/uploads after refused sends.
+- Add explicit campaign draft saving, recoverable audience/search/preview failures and correct local schedule editing. Preserve the published Spanish interface, configurable time zone, direct webhook setup, number diagnostics and contact compatibility fixes.
+- Share validated business operations across HTTP and AI wrappers; remove the former S3/manual-URL upload flow in favor of native workspace files.
+- Update README feature/tool lists and align CI with the standalone Twenty 2.54 CLI while retaining provenance-based npm publication and tag/version checks.
+
+## 0.1.4 — 2026-11-02
+
+### Fixed
+
+- Installation on newer Twenty servers no longer fails with `forwardedRequestHeaders cannot
+  include credential headers: authorization`. Authenticated HTTP routes use the platform's
+  execution context to identify the caller instead of forwarding their session credential.
+- Caller role checks use the verified workspace member ID, including when role assignments omit
+  `userWorkspaceId`. Agent/admin restrictions, workspace-admin setup access, and the default
+  refusal of API-key callers remain enforced. Role assignment reads use application access.
+- Regression coverage rejects credential forwarding on every HTTP route and checks that request
+  body identity fields cannot impersonate a workspace administrator.
+
+- Updated contact and audience phone selections for typed `additionalPhones` objects and let Twenty
+  determine the creator name instead of passing the removed `ActorCreateInput.name` field.
+
+**Compatibility:** requires Twenty `^2.53.0`; CI now tests `v2.53.1`, matching the target workspace.
+Older servers remain on 0.1.3.
+
+## 0.1.3 — 2026-10-29
+
+### Changed — the reverse-proxy alias is no longer part of setup ([#4])
+
+- **The webhook resolver now answers the `GET` handshake and the `POST` deliveries on the same
+  URL** — `<base>/webhooks/server/bb76f114-7843-4a09-af64-9ceca78479cd` — because the route declares
+  `httpMethods: [GET, POST]`, which the Twenty server supports since 2.35.0 (upstream
+  twentyhq/twenty#24401). Meta takes one callback URL; that one now is it. The handler already
+  answered the handshake; the platform was the half that was missing.
+- **The support floor is twenty-sdk / twenty-client-sdk 2.35.0 and a Twenty 2.35.0 server**, the
+  release that carries #24401. `engines.twenty` (published as the manifest's
+  `requiredServerVersionRange`) refuses an older server at install instead of failing at the
+  handshake, and `.twenty-version` — the CI pin and `docker:start` default — moves to `v2.35.0`
+  with it. The previous pin, `v2.31.1`, also had no `twenty-app-dev` image to run.
+- **The health panel, the post-install log and README step 6 all lead with the direct URL.** The
+  method-splitting proxy alias moves to a clearly optional legacy fallback for a Twenty that does
+  not route `GET` to server routes, and the README now also warns that Meta's "Send to my server"
+  button reports success without looking at the status code — confirm delivery in
+  `whatsappWebhookEvent`, not by that button.
+
+### Added — Spanish ([#6])
+
+- The interface follows a Spanish workspace's locale: all catalog entries translated alongside the
+  Portuguese and English they sit between, `es-MX` formatting, and the compiler forcing every key
+  to carry all three. Terminology follows Meta's console (tier, marketing, callback stay in
+  English); the register is `tú` throughout.
+
+### Added — the rendered clock is configurable ([#5])
+
+- **`WA_TIME_ZONE`** (default `Africa/Luanda`, so no existing install moves) drives every rendered
+  date: chat and thread timestamps, day separators, the `{{now.*}}` campaign variables and the
+  "created today" audience filter. An unrecognised name degrades to the default rather than
+  blanking the panel.
+- **Day boundaries survive daylight saving.** A day with a transition is 23 or 25 hours, and the
+  old fixed `+ 86_400_000` window drifted an hour on every one of them: in New York, "created
+  today" leaked the first hour of March 9th into March 8th's audience in spring and cut the last
+  hour off November 1st in autumn, and a Sunday-evening conversation stopped being "Yesterday" at
+  00:30 the next morning. Boundaries are now found from the zone itself, so the window runs first
+  midnight to *next* midnight wherever the clocks move.
+
+### Fixed — the package typechecks again ([#3])
+
+- `aboutDescription` is dropped from `application-config.ts`: the SDK's `ApplicationConfig` has
+  omitted the field since it existed, so the app could not pass `yarn typecheck` with it present.
+  With the SDK bump and a generated `twenty-client-sdk` schema, lint, typecheck and the unit suite
+  (including `schema-enums`, which needs the generated schema to read) all run clean — and CI now
+  generates that client from its own instance before checking.
+
+### Additional fixes and release tooling
+
+- Date-only audience filters preserve the selected civil date in western time zones and reject impossible dates.
+- Account settings show registration diagnostics from Meta's `platform_type` and `code_verification_status` fields.
+- CI paces app-file uploads within Twenty's development rate limit and allows time for integration setup.
+- npm publishing checks tag/version agreement and uses the pinned Yarn version through Corepack.
+- Removed the unconfigured CD workflow. CI and npm publishing remain; merging to `main` does not deploy a workspace.
+
+**Compatibility:** requires Twenty `^2.35.0`. Existing `WA_TIME_ZONE` defaults remain `Africa/Luanda`.
+
+[#1]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/1
+[#3]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/3
+[#4]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/4
+[#5]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/5
+[#6]: https://github.com/pixelinfinito/twenty-app-whatsapp/pull/6
+
+## 0.1.2 — everything between Meta and the resolver
+
+0.1.1 fixed the callback URL. Installing it on a live 2.31.1 server then produced **five more
+ways for a correctly-configured webhook to deliver nothing**, each with its own status code and
+none of them visible from the product. Every item below was found that way, in the order an
+operator hits them, and the release is mostly about making each one say what it is.
+
+The shape they share: the Meta dashboard shows the webhook verified and active, the settings page
+shows the number connected, every health row is green — and messages vanish. What was missing was
+never the code path. It was a sentence naming which of five unrelated things was switched off.
+
+### Added — the `Webhook route (POST)` health row
+
+- **Probes the resolver directly and names what it finds.** It exists because the row above it can
+  be green while the `POST` half does not exist at all. Four readings, three of them found on a
+  live install: `404` the app registration is unclaimed, so its server route has no workspace to
+  run in; `403` the server refuses to run any logic function; `5xx` `META_APP_SECRET` is unset and
+  the resolver fails closed rather than verify against an empty key; `401` to a signature we
+  generated, meaning the secret does not match Meta's.
+- **The probe is signed**, which is what makes it free: a valid signature carries it past the HMAC
+  check to the resolver's `object` guard, which answers `200` without touching a record, a queue
+  or Meta. An unsigned probe would trip the signature-rejected metric — a security signal — on
+  every load of the settings page. Signing is also what makes `401` mean something specific.
+- Probing beats reading the registration's owner over the metadata API: ownership names the
+  *likeliest* cause without proving the route answers, and the probe keeps reporting when the
+  cause is one nobody has seen yet. Which is how `403` and `5xx` were found.
+
+### Added — the setup steps, in the app and the README
+
+- **An eight-step "Setup, in order" list on the callback card**, each step named after the failure
+  it prevents, because the order is load-bearing: the alias cannot be tested before the route
+  exists, and the route does not exist before the app is claimed.
+- **Two steps nobody would guess.** *Claim the app registration* — the control renders only on the
+  admin-panel route and an API key cannot perform it, as the mutation reads a user permission.
+  *Set `LOGIC_FUNCTION_TYPE`* — a **server** environment variable, not an app variable; without it
+  Twenty loads a driver that refuses every logic function.
+- **Turn off Cloudflare's AI Labyrinth and Bot Fight Mode for the host.** The worst of the five,
+  because it is the only one that leaves *no trace on the server at all*: bot protection classifies
+  Meta's deliveries as crawler traffic and serves them decoy content, so verification passes, every
+  manual probe returns the right status, and real deliveries evaporate with nothing in any log. The
+  only evidence is `AI Labyrinth Served` in Cloudflare's own Security → Events. Troubleshooting now
+  leads with the general form: **silence in these logs is evidence about the edge, not the app.**
+- **Connect the number before testing.** Meta's "Send to my server" sample carries a
+  `phone_number_id` nobody has claimed; the resolver answers `200` and discards it — correctly,
+  since a non-2xx would earn a week of retries for a number we do not host — leaving no row. Run
+  against an unconnected number, a working webhook and a broken one look identical.
+- The Cloudflare URL Rewrite rules are documented alongside Caddy and Nginx, and are now
+  field-tested rather than theoretical: **a real signed delivery verified through them**, which
+  settles the standing worry that a proxy might re-encode the body and invalidate every signature.
+
+### Fixed — `wa.webhook.unclaimed` reported a count and nothing else
+
+- **It now names the routing keys it tried.** A real message arrived, its signature verified, and
+  it was discarded as unclaimed while the settings page showed the number CONNECTED. The log said
+  `unclaimedEntries: 1`, which cannot distinguish "Meta is delivering for a different
+  `phone_number_id`" from "the claim never landed" — opposite problems with opposite fixes. The
+  keys are safe to log: Meta prints them in its own dashboard and `wa.account.claim_conflict`
+  already logs both.
+
+### Changed
+
+- The architecture rule keeping `META_APP_SECRET` inside the provider now admits
+  `components/common/copy.ts`, which *names* the variable in a remedy sentence — "Set
+  META_APP_SECRET" is the whole value of that sentence — bounded by a new test asserting the copy
+  catalog never reads `process.env`.
+- `specs/00` D-1 records **probe P-1 as answered**, after a year as an open question. `GET` is not
+  routed to server routes on 2.31.x, so the alias is required; and a `Response` body is returned
+  **verbatim**, not JSON-encoded, so the bare-challenge handshake is correct exactly as written and
+  must not be "fixed" into a JSON body.
+
+### Previously (unreleased notes folded into this release)
+
+- **A new `Webhook route (POST)` health row.** Found while installing 0.1.1 on a live 2.31.1
+  server: the app installed cleanly, all 47 logic functions registered, every health row was
+  green — and `POST /webhooks/server/{resolver}` answered `404 LOGIC_FUNCTION_NOT_FOUND`. The
+  cause is that `wa-webhook-resolver` is a **server route**, which runs in the app-owner
+  workspace; while the application registration is unclaimed there is no such workspace, so the
+  platform has nowhere to dispatch it. Nothing in the product said so, and Meta reports only an
+  undetailed delivery failure — the same dead end as the callback URL above, reached a different
+  way. The row probes the route directly and names the remedy (claim the registration in
+  Settings → Applications). README gains it as **step 0**.
+- **And the state one step past it.** With the registration claimed the route existed and answered
+  `403 LOGIC_FUNCTION_DISABLED` — the platform refusing to run *any* logic function because the
+  server has no `LOGIC_FUNCTION_TYPE`. Nothing in this app works in that state: not the routes, not
+  the cron jobs, not the settings page. The row names it and the remedy
+  (`LOGIC_FUNCTION_TYPE=LOCAL` or `LAMBDA` in the Twenty server environment). The resolver never
+  answers 403 itself, so the status is unambiguous.
+- The probe is **signed with the app secret**, which is what makes it free: a valid signature
+  carries it past the HMAC check to the resolver's `object` guard, which answers `200` without
+  touching a record, a queue or Meta. An unsigned probe would trip the signature-rejected metric —
+  a security signal — on every load of the settings page. Signing also makes `401` meaningful: it
+  can only be a `META_APP_SECRET` that does not match the one in Meta, which the row says outright.
+- Probing rather than reading the registration's owner over the metadata API is deliberate.
+  Ownership names the likeliest cause without proving the route answers; a request to the route
+  proves the thing that actually matters, and keeps working when the cause is one we have not seen.
+- The architecture rule that keeps `META_APP_SECRET` inside the provider now admits
+  `components/common/copy.ts`, which *names* the variable in a remedy sentence — "Set
+  META_APP_SECRET" is the whole value of that sentence — and is held to naming it by a new test
+  asserting the catalog never reads `process.env`.
+
+## 0.1.1 — the callback URL nobody could use
+
+Four defects reported from a live 2.31.6 install ([#1]), all confirmed against the code.
+
+### Fixed — the Meta callback URL was a 404 (P0)
+
+- **The health panel, the post-install log and the README all published
+  `<base>/s/whatsapp/webhook`, and no route has ever answered there.** `/s/` is the namespace for
+  `httpRouteTriggerSettings` paths; the D-1 fallback is a *reverse-proxy alias* at
+  `/whatsapp/webhook`, at the domain root. An off-by-`/s/` turned the one string an operator cannot
+  work out for themselves into a dead end, and the webhook could not be configured in Meta at all —
+  the app could send, but never receive.
+- **Nothing said the alias had to exist.** Meta takes one URL for both the `GET` handshake and the
+  `POST` deliveries; Twenty answers those on two different paths, and the proxy rule is what makes
+  one URL out of two. The callback card now leads with that sentence, the other two URLs are
+  labelled `(GET)` and `(POST)`, and README step 4 carries the Caddy and Nginx snippets, the
+  don't-rewrite-the-body warning, and a `curl` probe for whether your Twenty routes `GET` to server
+  routes at all — on 2.31.6 it does not, so the alias is required rather than optional.
+
+### Fixed — three smaller ones from the same session
+
+- **`defaultCountryCallingCode` accepted a whole phone number.** The field is free text sitting
+  under `phone_number_id` and `WABA id`, and the value went to the record unvalidated — where it
+  becomes the prefix put in front of every nationally-formatted contact, so the send fails at Meta
+  weeks and several layers away from the typo. Now validated (1–3 digits, normalised to a leading
+  `+`), with the counter-example in the hint and the variable description. A new `updateAccount`
+  admin action and an editable field on the connected-number card make it fixable without reaching
+  for Twenty's GraphQL API, which was previously the only repair.
+- **`UNKNOWN` quality was reported as a downgrade.** A brand-new number that has never sent
+  anything was greeted with *"Meta lowered the rating. Cut marketing sends and review the
+  templates."* `UNKNOWN` means "no data yet"; the row is green for it now, as the `webhook` row
+  already was for a number that has never received an event, and the sentence beside it says so
+  rather than inventing a grade. `YELLOW` and `RED` still fail.
+- **Confirmation texts could drift from the keyword lists silently.** An admin localising
+  `WA_OPT_OUT_KEYWORDS` and dropping `SAIR` left `WA_OPT_IN_CONFIRMATION_PT` still telling customers
+  to reply `SAIR` — a consent path that fails with no error anywhere. A `consentWording` health row
+  now names the dead word, considering only known consent words so a brand or an acronym in the
+  wording cannot redden it. Confirmations may also use `{optOutKeyword}` / `{optInKeyword}`, which
+  resolve from the live lists and cannot drift; they are not the default, because the lists carry
+  no language tag and `{optInKeyword}` would put `START` inside the Portuguese sentence.
+
+[#1]: https://github.com/pixelinfinito/twenty-app-whatsapp/issues/1
+
+## Unreleased — the attachment panel loses a dead tab and gains a picker
+
+- **"From this device" is gone.** The sandbox bridge hands a picked file's metadata over without
+  its bytes — `arrayBuffer()` is absent on the proxy and `FileReader` cannot read it either — so
+  every device pick failed at upload (D-53 field correction, specs/00). The platform docs said so
+  all along; the probe result that seemed to disprove them had only measured a blob the page
+  *created*, which is why voice notes still work. A tab whose every pick fails is worse than no
+  tab.
+- **"Already in Twenty" opens as a picker.** A new `fileSearch` action on the thread route answers
+  the workspace's attachments — newest first, name-searchable, debounced like the campaign
+  builder's contact search — and choosing a row fills the address, filename and kind boxes, so
+  nobody has to hunt down a file URL by hand. The suggested kind is judged conservatively from the
+  stored file's extension (`mediaKindForFilename`): a webp or a .mov is offered as a document,
+  which arrives, rather than as media Meta will refuse. The boxes stay editable — a file the
+  search cannot see can still be pasted, and the send path itself is unchanged.
 
 ## Unreleased — end-to-end QA fixes
 

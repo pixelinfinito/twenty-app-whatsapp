@@ -2,7 +2,7 @@ import { SurfaceStyles } from '../common/SurfaceStyles';
 import { useMemo, useState } from 'react';
 import { useTheme } from 'twenty-ui/theme-constants';
 
-import { useCopy, type Translate } from '../common/copy';
+import { useCopy, type Lang, type Translate } from '../common/copy';
 import { displayPhone, money, relativeTime } from '../common/format';
 import { Glyph } from '../common/icons';
 import { ActionButton, Banner, Card, EmptyState, StatusPill } from '../common/ui';
@@ -694,7 +694,7 @@ const CampaignRow = ({
 }: {
   campaign: Record<string, any>;
   now: Date;
-  lang: 'pt' | 'en';
+  lang: Lang;
   t: Translate;
   /** Rendering the archive: the last column reads `archivedAt`, not `createdAt`. */
   archived?: boolean;
@@ -798,7 +798,7 @@ const Freshness = ({
 }: {
   campaign: Record<string, any>;
   now: Date;
-  lang: 'pt' | 'en';
+  lang: Lang;
   t: Translate;
 }) => {
   const theme = useTheme();

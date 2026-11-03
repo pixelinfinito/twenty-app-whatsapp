@@ -1,3 +1,4 @@
+import { config } from './config';
 import type { AudienceCursor, AudienceDefinition } from '../domain/campaign/audience';
 import { translateViewFilters } from '../domain/campaign/view-filter';
 import { pageOf, query } from './repositories/base';
@@ -52,8 +53,8 @@ export type AudiencePage = {
 /**
  * Every number on a Person, primary first.
  *
- * `additionalPhones` is RAW_JSON with no enforced shape: Twenty writes objects
- * (`{ number, callingCode }`), imports have been seen to write bare strings,
+ * Current Twenty returns typed additional phones (`{ number, callingCode }`).
+ * Older imports have also been seen to write bare strings,
  * and a hand-edited record can hold either. All three are read, because the
  * cost of misreading one is a contact excluded as `invalid_phone` who has a
  * perfectly good number in the CRM.
@@ -136,7 +137,16 @@ export const resolveViewFilter = async (
     fieldsForObject(view.objectMetadataId),
   ]);
 
-  const translated = translateViewFilters({ filters, groups, fields, now });
+  // Without the zone, "created today" partitions on Angola's midnight while the
+  // operator is looking at their own — the audience comes back a little
+  // different from the one the view showed (D-44).
+  const translated = translateViewFilters({
+    filters,
+    groups,
+    fields,
+    now,
+    timeZone: config.timeZone(),
+  });
 
   if (!translated.ok) {
     throw new AudienceError(

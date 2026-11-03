@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { THREAD_STATUS } from '../domain/constants';
 import { chunk, isRetryableCoreError, isUniqueViolation, MAX_BATCH } from './batching';
-import { DEFAULTS, boolVar, config, forAccount, intVar, listVar, numberVar } from './config';
+import {
+  DEFAULTS,
+  boolVar,
+  config,
+  forAccount,
+  intVar,
+  listVar,
+  numberVar,
+  parseCountryCallingCode,
+} from './config';
 import { REDACTED, describeError, logger, redactForLog } from './logger';
 import { splitProfileName, toLinkCandidates } from './matching';
 import { metricKey } from './metrics';
@@ -200,6 +209,37 @@ describe('config parsing', () => {
     expect(forAccount('+244', config.defaultCountryCallingCode)).toBe('+244');
     expect(forAccount(null, config.defaultCountryCallingCode)).toBe('+351');
     expect(forAccount(undefined, config.defaultCountryCallingCode)).toBe('+351');
+  });
+
+  /**
+   * The field is free text sitting under `phone_number_id` and `WABA id`, and
+   * operators pasted the whole display number into it. The stored value is the
+   * prefix put in front of every nationally-formatted contact, so a full
+   * number there produces recipients that do not exist — and the send fails at
+   * Meta, weeks and several layers away from the typo.
+   */
+  it.each(['+244', '244', ' +244 ', '1', '351'])(
+    'accepts the calling code %p',
+    (value) => {
+      expect(parseCountryCallingCode(value)).toMatch(/^\+\d{1,3}$/);
+    },
+  );
+
+  it.each([
+    '+244923456789', // the whole display number — the actual bug
+    '244 923 456 789',
+    '+0244', // no calling code starts with zero
+    '+2440',
+    'AO',
+    '',
+    '+',
+  ])('refuses %p', (value) => {
+    expect(parseCountryCallingCode(value)).toBeNull();
+  });
+
+  it('normalises to a leading plus, so the normaliser never has to guess', () => {
+    expect(parseCountryCallingCode('244')).toBe('+244');
+    expect(parseCountryCallingCode('+244')).toBe('+244');
   });
 
   it('treats a false account value as set, not as absent', () => {

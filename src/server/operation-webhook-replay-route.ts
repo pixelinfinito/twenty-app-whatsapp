@@ -487,4 +487,3 @@ export const handler = async (event: RoutePayload<ReplayRouteBody>, executionCon
     return new Response({ error: 'Internal error' }, { status: 500 });
   }
 };
-

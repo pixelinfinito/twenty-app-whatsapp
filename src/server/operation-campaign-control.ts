@@ -368,6 +368,7 @@ export const previewCampaign = async ({
           defaultCountryCallingCode: defaultCallingCode,
         },
         now: new Date(),
+        timeZone: config.timeZone(),
       },
     });
 
@@ -510,6 +511,7 @@ const testSend = async ({
               defaultCountryCallingCode: defaultCallingCode,
             },
             now: new Date(),
+            timeZone: config.timeZone(),
           },
         }).parameters
       : asJson<ResolvedParameters>(sample.resolvedParameters, { body: [], buttons: [] });
@@ -1275,4 +1277,3 @@ const abandonPending = async (campaignId: string): Promise<number> => {
 
   return total;
 };
-

@@ -12,7 +12,11 @@ import {
   OWN_WRITE_WINDOW_MS,
   isAlreadyRecorded,
 } from './wa-consent-backfill';
-import { confirmationText, consentIntent } from './wa-consent-keyword';
+import {
+  confirmationText,
+  consentIntent,
+  consentWordingDrift,
+} from './wa-consent-keyword';
 import { MAX_IMPORT_ROWS, parseMethod, parseStatus } from './wa-consent-route';
 import {
   TEMPLATE_NAME_PATTERN,
@@ -103,6 +107,101 @@ describe('the confirmation wording', () => {
   it('tells the contact how to reverse the decision', () => {
     expect(confirmationText(CONSENT_STATUS.OPTED_OUT)).toMatch(/INICIAR/);
     expect(confirmationText(CONSENT_STATUS.OPTED_IN)).toMatch(/SAIR/);
+  });
+
+  /**
+   * The drift-proof alternative to spelling the word out. An operator who
+   * localises the keyword lists can write the placeholder once and never have
+   * the confirmation and the matcher disagree again.
+   */
+  it('resolves the keyword placeholders from the live lists', () => {
+    process.env.WA_OPT_OUT_KEYWORDS = 'CHEGA,BASTA';
+    process.env.WA_OPT_IN_CONFIRMATION_PT = 'Responda {optOutKeyword} para parar.';
+
+    expect(confirmationText(CONSENT_STATUS.OPTED_IN)).toBe('Responda CHEGA para parar.');
+  });
+
+  /** Naming no word at all is worse than naming the shipped one. */
+  it('falls back to the shipped keyword when the list is empty', () => {
+    process.env.WA_OPT_OUT_KEYWORDS = '';
+    process.env.WA_OPT_IN_CONFIRMATION_PT = 'Responda {optOutKeyword} para parar.';
+
+    expect(confirmationText(CONSENT_STATUS.OPTED_IN)).toBe('Responda STOP para parar.');
+  });
+});
+
+/**
+ * The silent-failure case from issue #1: an admin localises
+ * `WA_OPT_OUT_KEYWORDS`, drops `SAIR`, and the confirmation goes on telling
+ * customers to reply a word the matcher will no longer accept. Nothing errors
+ * — the message sends, and the customer's opt-out is simply ignored.
+ */
+describe('drift between the confirmations and the keyword lists', () => {
+  const LISTS = { optOut: ['STOP', 'SAIR'], optIn: ['START', 'INICIAR'] };
+
+  it('is silent when the quoted words are still recognised', () => {
+    expect(
+      consentWordingDrift(
+        {
+          optOutConfirmation: 'Para voltar a receber, responda INICIAR.',
+          optInConfirmation: 'Para parar, responda SAIR.',
+        },
+        LISTS,
+      ),
+    ).toEqual([]);
+  });
+
+  it('names the word an admin removed from the list', () => {
+    const drift = consentWordingDrift(
+      { optOutConfirmation: 'Responda INICIAR.', optInConfirmation: 'Responda SAIR.' },
+      { optOut: ['STOP', 'PARAR'], optIn: ['START', 'INICIAR'] },
+    );
+
+    expect(drift).toEqual([
+      { text: 'optInConfirmation', word: 'SAIR', expectedIn: 'optOut' },
+    ]);
+  });
+
+  /**
+   * The pairing is the easy thing to get backwards, and getting it backwards
+   * would report every correct install as broken: the opt-*out* confirmation
+   * names an opt-*in* word, because it is telling the customer how to return.
+   */
+  it('checks each confirmation against the opposite list', () => {
+    const drift = consentWordingDrift(
+      { optOutConfirmation: 'Responda SAIR.', optInConfirmation: 'Responda INICIAR.' },
+      LISTS,
+    );
+
+    expect(drift.map((entry) => entry.word).sort()).toEqual(['INICIAR', 'SAIR']);
+  });
+
+  /**
+   * A brand or an acronym in the wording is not a consent keyword, and a
+   * health row that reddens over one is a health row people learn to ignore.
+   */
+  it('ignores capitalised words that were never keywords', () => {
+    expect(
+      consentWordingDrift(
+        {
+          optOutConfirmation: 'A ACME já não lhe envia mensagens. Responda INICIAR.',
+          optInConfirmation: 'Obrigado — ACME. Responda SAIR.',
+        },
+        LISTS,
+      ),
+    ).toEqual([]);
+  });
+
+  it('cannot drift when the wording uses the placeholders', () => {
+    expect(
+      consentWordingDrift(
+        {
+          optOutConfirmation: 'Responda {optInKeyword}.',
+          optInConfirmation: 'Responda {optOutKeyword}.',
+        },
+        { optOut: ['CHEGA'], optIn: ['VOLTAR'] },
+      ),
+    ).toEqual([]);
   });
 });
 

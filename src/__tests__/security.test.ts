@@ -126,7 +126,7 @@ const PUBLIC_ROUTES: Record<string, string> = {
 type RouteFacts = {
   path: string;
   isAuthRequired: boolean;
-  forwardsAuthorization: boolean;
+  forwardsCredentialHeaders: boolean;
   callsRequireCaller: boolean;
   roles: Set<string>;
 };
@@ -141,8 +141,8 @@ const routeFactsFor = (file: string): RouteFacts | null => {
   return {
     path,
     isAuthRequired: /isAuthRequired:\s*true/.test(source),
-    forwardsAuthorization: /forwardedRequestHeaders:\s*\[\s*'authorization'\s*\]/.test(source),
-    callsRequireCaller: /requireCaller\s*\(/.test(source),
+    forwardsCredentialHeaders: /forwardedRequestHeaders:\s*\[[^\]]*['"](?:authorization|cookie|proxy-authorization)['"]/i.test(source),
+    callsRequireCaller: /requireCaller\(event, executionContext\)/.test(source),
     roles: new Set(
       [...source.matchAll(/requireRole\(\s*caller\s*,\s*'(admin|agent)'\s*\)/g)].map(
         (match) => match[1]!,
@@ -192,7 +192,7 @@ describe('the route role matrix (SEC-5)', () => {
     expect(route!.facts.callsRequireCaller).toBe(true);
 
     // Twenty 2.54 forbids forwarding credentials; identity is provided in execution context.
-    expect(route!.facts.forwardsAuthorization).toBe(false);
+    expect(route!.facts.forwardsCredentialHeaders).toBe(false);
     expect(sourceOf(route!.file)).toMatch(/requireCaller\(event, executionContext\)/);
   });
 

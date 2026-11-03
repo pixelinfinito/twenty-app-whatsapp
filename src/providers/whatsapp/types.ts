@@ -94,6 +94,20 @@ export type MetaPhoneNumber = {
   qualityRating: string | null;
   messagingLimitTier: string | null;
   throughputLevel: string | null;
+  /**
+   * `CLOUD_API`, `ON_PREMISE`, or `NOT_APPLICABLE` when the number is in the
+   * WABA but not registered for messaging through the API at all.
+   *
+   * Every other field here is populated for *any* number in the WABA, which is
+   * why they cannot answer the question that matters: a number that is not on
+   * Cloud API still returns a display name, a quality rating and a tier, so
+   * the app reported it CONNECTED · GREEN · TIER_250 while no webhook could
+   * ever fire for it. Messages to it are delivered by WhatsApp — two ticks on
+   * the sender's phone — and simply never become events.
+   */
+  platformType: string | null;
+  /** `VERIFIED` once the number has completed its registration code check. */
+  codeVerificationStatus: string | null;
 };
 
 export type WhatsAppProvider = {

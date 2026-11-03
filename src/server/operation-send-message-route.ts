@@ -713,4 +713,3 @@ export const handler = async (
     return new Response({ error: 'Internal error' }, { status: 500 });
   }
 };
-
