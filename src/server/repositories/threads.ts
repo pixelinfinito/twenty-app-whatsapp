@@ -6,7 +6,6 @@ import type {
 } from '../../domain/constants';
 import { inBatches } from '../batching';
 import { nodesOf, pageOf, query, type JsonObject } from './base';
-import type { CoreSchema } from 'twenty-client-sdk/core';
 
 /**
  * `whatsappThread` — one conversation per (account, waId) (FR-THR-1).
@@ -449,13 +448,18 @@ export const listInboxThreads = async (
 
 export const listToolThreads = async (spec: InboxFilterSpec, input: Record<string, unknown>) => {
   const selectors = ['personId', 'accountId', 'assigneeId', 'status'] as const;
-  const extra: CoreSchema.WhatsappThreadFilterInput[] = [];
+  type IdFilter = { eq: string } | { is: 'NULL' };
+  type SelectorFilter = Partial<Record<'personId' | 'accountId' | 'assigneeId', IdFilter>> & {
+    status?: { eq: ThreadStatus } | { is: 'NULL' };
+  };
+  const extra: SelectorFilter[] = [];
   for (const key of selectors) {
     const value = input[key];
     if (value === null) extra.push({ [key]: { is: 'NULL' } });
+    else if (key === 'status' && typeof value === 'string') extra.push({ status: { eq: value as ThreadStatus } });
     else if (typeof value === 'string') extra.push({ [key]: { eq: value } });
   }
-  const filter: CoreSchema.WhatsappThreadFilterInput = { and: [inboxFilterFor(spec), ...extra] };
+  const filter = { and: [inboxFilterFor(spec), ...extra] };
   const result = await query((client) => client.query({
     whatsappThreads: {
       __args: {

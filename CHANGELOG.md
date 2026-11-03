@@ -16,7 +16,7 @@ All notable changes to this application are documented in this file.
 - Improve the responsive composer, keyboard controls, focus/contrast, narrow widgets, action feedback and preservation of drafts/uploads after refused sends.
 - Add explicit campaign draft saving, recoverable audience/search/preview failures and correct local schedule editing. Preserve the published Spanish interface, configurable time zone, direct webhook setup, number diagnostics and contact compatibility fixes.
 - Share validated business operations across HTTP and AI wrappers; remove the former S3/manual-URL upload flow in favor of native workspace files.
-- Update README feature/tool lists and align CI with the standalone Twenty 2.54 CLI while retaining provenance-based npm publication and tag/version checks.
+- Update README feature/tool lists and align CI with the standalone Twenty 2.54 CLI while retaining provenance-based npm publication and tag/version checks. Builds also support a fresh SDK before the workspace client has been generated.
 
 ## 0.1.4 — 2026-11-02
 
